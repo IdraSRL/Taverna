@@ -1,4 +1,4 @@
-// Music system management - Improved synchronization
+// Music system management - Enhanced synchronization
 import FirebaseHelper from './firebase.js';
 
 export class MusicSystem {
@@ -13,8 +13,9 @@ export class MusicSystem {
         this.audioElement = null;
         this.syncInterval = null;
         this.lastSyncTime = 0;
-        this.syncFrequency = 2000; // Sync every 2 seconds
+        this.syncFrequency = 1000; // Sync every 1 second for better precision
         this.isSyncing = false;
+        this.masterStateCheckInterval = null;
     }
     
     // Initialize music system
@@ -30,6 +31,7 @@ export class MusicSystem {
         // Start sync interval for master
         if (this.authManager.isMaster()) {
             this.startSyncInterval();
+            this.startMasterStateCheck();
         }
     }
     
@@ -109,12 +111,30 @@ export class MusicSystem {
         if (!this.authManager.isMaster()) return;
         
         this.syncInterval = setInterval(() => {
-            if (this.isPlaying && this.currentTrack && !this.isSyncing) {
+            if (this.currentTrack && !this.isSyncing) {
                 this.syncMusicState();
             }
         }, this.syncFrequency);
         
         console.log('🎵 Intervallo sincronizzazione musica avviato');
+    }
+    
+    // Start master state check (Master only)
+    startMasterStateCheck() {
+        if (!this.authManager.isMaster()) return;
+        
+        this.masterStateCheckInterval = setInterval(() => {
+            if (this.currentTrack && this.audioElement) {
+                // Ensure audio element state matches our state
+                if (this.isPlaying && this.audioElement.paused) {
+                    this.audioElement.play().catch(console.error);
+                } else if (!this.isPlaying && !this.audioElement.paused) {
+                    this.audioElement.pause();
+                }
+            }
+        }, 500); // Check every 500ms
+        
+        console.log('🎵 Controllo stato master avviato');
     }
     
     // Stop sync interval
@@ -123,6 +143,12 @@ export class MusicSystem {
             clearInterval(this.syncInterval);
             this.syncInterval = null;
             console.log('🎵 Intervallo sincronizzazione musica fermato');
+        }
+        
+        if (this.masterStateCheckInterval) {
+            clearInterval(this.masterStateCheckInterval);
+            this.masterStateCheckInterval = null;
+            console.log('🎵 Controllo stato master fermato');
         }
     }
     
@@ -175,16 +201,21 @@ export class MusicSystem {
                 this.selectTrackById(musicState.currentTrackId, false); // Don't sync back
             }
             
-            // Sync play/pause state
+            // Sync play/pause state with precise timing
             if (musicState.isPlaying !== this.isPlaying) {
                 if (musicState.isPlaying && this.audioElement && this.currentTrack) {
-                    this.audioElement.currentTime = musicState.currentTime || 0;
+                    // Calculate expected current time based on timestamp
+                    const timeSinceUpdate = Date.now() - musicState.timestamp;
+                    const expectedTime = (musicState.currentTime || 0) + (timeSinceUpdate / 1000);
+                    
+                    this.audioElement.currentTime = expectedTime;
                     this.audioElement.play().catch(error => {
                         console.error('❌ Errore riproduzione sincronizzata:', error);
                     });
                     this.isPlaying = true;
                 } else if (!musicState.isPlaying && this.audioElement) {
                     this.audioElement.pause();
+                    this.audioElement.currentTime = musicState.currentTime || 0;
                     this.isPlaying = false;
                 }
                 this.updatePlayPauseButton();
@@ -199,18 +230,21 @@ export class MusicSystem {
                 this.updateLoopButton();
             }
             
-            // Sync time if playing and not too far off
+            // Sync time if playing and significant difference
             if (musicState.isPlaying && this.isPlaying && this.audioElement && musicState.currentTime) {
-                const timeDiff = Math.abs(this.audioElement.currentTime - musicState.currentTime);
-                if (timeDiff > 3) { // More than 3 seconds difference
-                    this.audioElement.currentTime = musicState.currentTime;
-                    console.log('🎵 Sincronizzazione tempo audio:', musicState.currentTime);
+                const timeSinceUpdate = Date.now() - musicState.timestamp;
+                const expectedTime = musicState.currentTime + (timeSinceUpdate / 1000);
+                const timeDiff = Math.abs(this.audioElement.currentTime - expectedTime);
+                
+                if (timeDiff > 2) { // More than 2 seconds difference
+                    this.audioElement.currentTime = expectedTime;
+                    console.log('🎵 Sincronizzazione tempo audio:', expectedTime);
                 }
             }
             
             setTimeout(() => {
                 this.isSyncing = false;
-            }, 500);
+            }, 200);
             
         } catch (error) {
             console.error('❌ Errore aggiornamento stato musica:', error);
@@ -245,15 +279,8 @@ export class MusicSystem {
     handlePlaylistUpdate(snapshot) {
         try {
             const playlistData = snapshot.val();
-            const playlistContainer = document.getElementById('playlist');
-            
-            if (!playlistContainer) {
-                console.error('❌ Container playlist non trovato');
-                return;
-            }
             
             if (!playlistData) {
-                playlistContainer.innerHTML = '<div style="text-align: center; color: #cd853f; padding: 1rem; font-style: italic;">Nessuna traccia nella playlist</div>';
                 console.log('🎵 Nessuna traccia nella playlist');
                 return;
             }
@@ -270,42 +297,9 @@ export class MusicSystem {
             
             console.log(`🎵 Aggiornamento playlist: ${tracks.length} tracce`);
             
-            playlistContainer.innerHTML = '';
-            tracks.forEach(track => {
-                const trackElement = this.createTrackElement(track);
-                playlistContainer.appendChild(trackElement);
-            });
-            
         } catch (error) {
             console.error('❌ Errore aggiornamento playlist:', error);
         }
-    }
-    
-    // Create track element
-    createTrackElement(track) {
-        const trackDiv = document.createElement('div');
-        trackDiv.className = 'playlist-item';
-        trackDiv.setAttribute('data-track-key', track.key);
-        trackDiv.setAttribute('data-track-id', track.id);
-        
-        if (this.currentTrack && this.currentTrack.id === track.id) {
-            trackDiv.classList.add('active');
-        }
-        
-        const isMaster = this.authManager.isMaster();
-        
-        trackDiv.innerHTML = `
-            <div class="track-info">
-                <div class="track-title">${track.title || track.name}</div>
-                <div class="track-duration">${this.formatDuration(track.duration)}</div>
-            </div>
-            <div class="track-actions">
-                ${isMaster ? `<button class="track-btn" onclick="window.musicSystem.selectTrackById('${track.id}')">▶️</button>` : ''}
-                ${isMaster ? `<button class="track-btn" onclick="window.musicSystem.deleteTrack('${track.id}')">🗑️</button>` : ''}
-            </div>
-        `;
-        
-        return trackDiv;
     }
     
     // Select track by ID (Master only or internal sync)
@@ -350,7 +344,6 @@ export class MusicSystem {
             }
             
             // Update UI
-            this.updatePlaylistDisplay();
             this.updateTrackDisplay();
             
             // Enable play button for master
@@ -547,19 +540,6 @@ export class MusicSystem {
             trackName.textContent = 'Nessuna traccia selezionata';
             trackTime.textContent = '--:-- / --:--';
         }
-    }
-    
-    // Update playlist display
-    updatePlaylistDisplay() {
-        const playlistItems = document.querySelectorAll('.playlist-item');
-        playlistItems.forEach(item => {
-            const trackId = item.getAttribute('data-track-id');
-            if (this.currentTrack && trackId === this.currentTrack.id) {
-                item.classList.add('active');
-            } else {
-                item.classList.remove('active');
-            }
-        });
     }
     
     // Format time in MM:SS

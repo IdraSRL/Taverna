@@ -1,13 +1,13 @@
 // Version management system - Enhanced cache busting
 export const AppVersion = {
-    version: '1.0.7',
+    version: '1.0.8',
     buildDate: new Date().toISOString(),
     
     // Get version string for aggressive cache busting
     getVersionString() {
         const timestamp = Date.now();
         const random = Math.random().toString(36).substr(2, 9);
-        return `v=${this.version}&t=${timestamp}&r=${random}&nocache=true&bust=${timestamp}`;
+        return `v=${this.version}&t=${timestamp}&r=${random}&nocache=true&bust=${timestamp}&force=reload`;
     },
     
     // Get version for display
@@ -66,6 +66,7 @@ export const AppVersion = {
         url.searchParams.set('nocache', 'true');
         url.searchParams.set('bust', Date.now());
         url.searchParams.set('reload', 'force');
+        url.searchParams.set('clear', 'all');
         
         // Force hard reload
         window.location.replace(url.toString());
@@ -92,14 +93,17 @@ export const AppVersion = {
         window.fetch = function(url, options = {}) {
             if (typeof url === 'string') {
                 const separator = url.includes('?') ? '&' : '?';
-                url += `${separator}nocache=${Date.now()}&v=${AppVersion.version}`;
+                const timestamp = Date.now();
+                const random = Math.random().toString(36).substr(2, 9);
+                url += `${separator}nocache=${timestamp}&v=${AppVersion.version}&r=${random}&bust=${timestamp}`;
             }
             
             options.cache = 'no-cache';
             options.headers = {
                 ...options.headers,
-                'Cache-Control': 'no-cache',
-                'Pragma': 'no-cache'
+                'Cache-Control': 'no-cache, no-store, must-revalidate',
+                'Pragma': 'no-cache',
+                'Expires': '0'
             };
             
             return originalFetch(url, options);

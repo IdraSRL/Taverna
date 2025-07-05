@@ -1,0 +1,47 @@
+# Disabilita completamente la cache per tutti i file
+<IfModule mod_headers.c>
+    Header always set Cache-Control "no-cache, no-store, must-revalidate, max-age=0"
+    Header always set Pragma "no-cache"
+    Header always set Expires "Thu, 01 Jan 1970 00:00:00 GMT"
+    Header always unset ETag
+    Header always unset Last-Modified
+</IfModule>
+
+<IfModule mod_expires.c>
+    ExpiresActive Off
+    ExpiresByType text/html "access plus 0 seconds"
+    ExpiresByType text/css "access plus 0 seconds"
+    ExpiresByType application/javascript "access plus 0 seconds"
+    ExpiresByType image/png "access plus 0 seconds"
+    ExpiresByType image/jpeg "access plus 0 seconds"
+    ExpiresByType audio/mpeg "access plus 0 seconds"
+    ExpiresByType application/pdf "access plus 0 seconds"
+</IfModule>
+
+# Rimuovi ETag
+FileETag None
+
+# Forza ricaricamento per tutti i file statici
+<FilesMatch "\.(css|js|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot|mp3|wav|ogg|pdf)$">
+    Header always set Cache-Control "no-cache, no-store, must-revalidate, max-age=0"
+    Header always set Pragma "no-cache"
+    Header always set Expires "Thu, 01 Jan 1970 00:00:00 GMT"
+    Header always unset ETag
+    Header always unset Last-Modified
+</FilesMatch>
+
+# Aggiungi parametri cache busting automatici
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    
+    # Rimuovi parametri cache busting dai file fisici
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteRule ^(.+)\.(css|js|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot|mp3|wav|ogg|pdf)$ $1.$2 [L]
+</IfModule>
+
+# Disabilita cache per PHP
+<FilesMatch "\.php$">
+    Header always set Cache-Control "no-cache, no-store, must-revalidate, max-age=0"
+    Header always set Pragma "no-cache"
+    Header always set Expires "Thu, 01 Jan 1970 00:00:00 GMT"
+</FilesMatch>

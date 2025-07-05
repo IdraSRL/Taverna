@@ -7,15 +7,15 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Uncial+Antiqua&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="styles.css?v=1.0.7&t=1736086298&r=abc123&nocache=true">
+    <link rel="stylesheet" href="styles.css?v=1.0.8&t=1736086298&r=abc123&nocache=true">
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
 </head>
 <body>
-    <!-- Version Display - Moved to bottom left -->
+    <!-- Version Display - Bottom left -->
     <div id="versionDisplay" class="version-display">
-        <span id="versionText">v1.0.7</span>
+        <span id="versionText">v1.0.8</span>
         <button id="reloadBtn" class="reload-btn" title="Ricarica applicazione">🔄</button>
     </div>
 
@@ -149,10 +149,6 @@
                         <span class="track-name">Nessuna traccia selezionata</span>
                         <span class="track-time">--:-- / --:--</span>
                     </div>
-                    
-                    <div class="playlist" id="playlist">
-                        <!-- Playlist items will be populated dynamically -->
-                    </div>
                 </div>
 
                 <!-- Chat and Dice Results Container -->
@@ -237,6 +233,17 @@
                             <div class="no-assets">Nessuna musica disponibile</div>
                         </div>
                     </div>
+
+                    <!-- Active Tokens on Map -->
+                    <div class="asset-library">
+                        <div class="library-header">
+                            <h4>🎯 Token sulla Mappa</h4>
+                            <span class="library-count" id="activeTokensCount">0</span>
+                        </div>
+                        <div class="library-content" id="activeTokensLibrary">
+                            <div class="no-assets">Nessun token sulla mappa</div>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -269,21 +276,13 @@
                 <div class="sheet-tools" id="sheetTools" style="display: none;">
                     <button id="drawBtn" class="tool-btn active">✏️ Disegna</button>
                     <button id="eraseBtn" class="tool-btn">🧽 Cancella</button>
-                    <button id="textBtn" class="tool-btn">📝 Testo</button>
+                    <button id="textBtn" class="tool-btn">📝 Aggiungi Testo</button>
                     <input type="color" id="drawColor" value="#ff0000">
                     <input type="range" id="drawSize" min="1" max="10" value="3">
                     <button id="clearAnnotationsBtn" class="tool-btn">🗑️ Pulisci</button>
                 </div>
             </div>
         </div>
-    </div>
-
-    <!-- Token Context Menu -->
-    <div id="tokenContextMenu" class="context-menu" style="display: none;">
-        <div class="context-item" data-action="rename">✏️ Rinomina</div>
-        <div class="context-item" data-action="resize">📏 Ridimensiona</div>
-        <div class="context-item" data-action="color">🎨 Cambia Colore</div>
-        <div class="context-item" data-action="delete">🗑️ Elimina</div>
     </div>
 
     <!-- Hidden File Inputs -->
@@ -295,10 +294,10 @@
     <audio id="musicPlayer" preload="metadata"></audio>
 
     <!-- Firebase Scripts -->
-    <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js?v=1.0.7&t=1736086298&r=abc123&nocache=true"></script>
-    <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js?v=1.0.7&t=1736086298&r=abc123&nocache=true"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js?v=1.0.8&t=1736086298&r=abc123&nocache=true"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js?v=1.0.8&t=1736086298&r=abc123&nocache=true"></script>
     
     <!-- App Scripts -->
-    <script type="module" src="js/main.js?v=1.0.7&t=1736086298&r=abc123&nocache=true"></script>
+    <script type="module" src="js/main.js?v=1.0.8&t=1736086298&r=abc123&nocache=true"></script>
 </body>
 </html>

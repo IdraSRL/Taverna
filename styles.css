@@ -13,7 +13,7 @@ body {
     overflow: hidden;
 }
 
-/* Version Display - Moved to bottom left */
+/* Version Display - Bottom left */
 .version-display {
     position: fixed;
     bottom: 10px;
@@ -463,13 +463,25 @@ body {
     background-size: cover;
     background-position: center;
     box-shadow: 0 2px 8px rgba(0,0,0,0.3);
-    transition: transform 0.2s ease;
+    transition: transform 0.2s ease, opacity 0.2s ease;
     pointer-events: all;
     user-select: none;
 }
 
 .token:hover {
-    transform: scale(1.1);
+    transform: translate(-50%, -50%) scale(1.1);
+}
+
+.token.following {
+    opacity: 0.8;
+    z-index: 200;
+    pointer-events: none;
+}
+
+.following-token {
+    opacity: 0.8;
+    z-index: 200;
+    pointer-events: none;
 }
 
 .token-name {
@@ -486,43 +498,75 @@ body {
     pointer-events: none;
 }
 
-/* Ping System Styles */
+/* Enhanced Ping System Styles */
 .map-ping {
     position: absolute;
-    width: 40px;
-    height: 40px;
-    border-radius: 50%;
+    width: 60px;
+    height: 60px;
     pointer-events: none;
     z-index: 1000;
     transform: translate(-50%, -50%);
 }
 
-.ping-name {
+.ping-ripple {
     position: absolute;
-    bottom: -30px;
-    left: 50%;
-    transform: translateX(-50%);
-    background: rgba(0,0,0,0.8);
-    padding: 3px 8px;
-    border-radius: 4px;
-    font-size: 11px;
-    white-space: nowrap;
-    pointer-events: none;
-    font-weight: 600;
+    width: 100%;
+    height: 100%;
+    border-radius: 50%;
+    opacity: 0.8;
 }
 
-@keyframes pingPulse {
+.ping-center {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    transform: translate(-50%, -50%);
+}
+
+.ping-name {
+    position: absolute;
+    bottom: -35px;
+    left: 50%;
+    transform: translateX(-50%);
+    padding: 4px 10px;
+    border-radius: 8px;
+    font-size: 12px;
+    font-weight: 600;
+    white-space: nowrap;
+    pointer-events: none;
+}
+
+@keyframes pingRipple {
     0% {
-        transform: translate(-50%, -50%) scale(0.5);
-        opacity: 0;
-    }
-    50% {
-        transform: translate(-50%, -50%) scale(1.2);
+        transform: scale(0.3);
         opacity: 1;
     }
     100% {
+        transform: scale(2);
+        opacity: 0;
+    }
+}
+
+@keyframes pingPulse {
+    0%, 100% {
         transform: translate(-50%, -50%) scale(1);
+    }
+    50% {
+        transform: translate(-50%, -50%) scale(1.2);
+    }
+}
+
+@keyframes pingNameFade {
+    0% {
+        opacity: 0;
+        transform: translateX(-50%) translateY(10px);
+    }
+    100% {
         opacity: 1;
+        transform: translateX(-50%) translateY(0);
     }
 }
 
@@ -535,33 +579,6 @@ body {
         opacity: 0;
         transform: translate(-50%, -50%) scale(0.5);
     }
-}
-
-/* Context Menu */
-.context-menu {
-    position: absolute;
-    background: rgba(44, 24, 16, 0.95);
-    border: 2px solid #8b4513;
-    border-radius: 6px;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-    z-index: 1000;
-    min-width: 150px;
-}
-
-.context-item {
-    padding: 0.75rem 1rem;
-    color: #d4af37;
-    cursor: pointer;
-    transition: background 0.2s ease;
-    border-bottom: 1px solid #8b4513;
-}
-
-.context-item:last-child {
-    border-bottom: none;
-}
-
-.context-item:hover {
-    background: rgba(139, 69, 19, 0.3);
 }
 
 /* Dice System Styles */
@@ -774,7 +791,6 @@ body {
     padding: 0.5rem;
     background: rgba(44, 24, 16, 0.8);
     border-radius: 4px;
-    margin-bottom: 0.75rem;
 }
 
 .track-name {
@@ -786,68 +802,6 @@ body {
 .track-time {
     color: #cd853f;
     font-size: 0.8rem;
-}
-
-.playlist {
-    max-height: 120px;
-    overflow-y: auto;
-    margin-bottom: 0.75rem;
-}
-
-.playlist-item {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 0.5rem;
-    background: rgba(44, 24, 16, 0.6);
-    border: 1px solid #8b4513;
-    border-radius: 4px;
-    margin-bottom: 0.25rem;
-    cursor: pointer;
-    transition: all 0.3s ease;
-}
-
-.playlist-item:hover {
-    background: rgba(139, 69, 19, 0.3);
-}
-
-.playlist-item.active {
-    background: rgba(212, 175, 55, 0.2);
-    border-color: #d4af37;
-}
-
-.track-info {
-    flex: 1;
-}
-
-.track-title {
-    color: #d4af37;
-    font-weight: 600;
-    font-size: 0.85rem;
-}
-
-.track-duration {
-    color: #cd853f;
-    font-size: 0.75rem;
-}
-
-.track-actions {
-    display: flex;
-    gap: 0.25rem;
-}
-
-.track-btn {
-    background: #8b4513;
-    color: #d4af37;
-    border: none;
-    border-radius: 3px;
-    padding: 0.25rem 0.5rem;
-    cursor: pointer;
-    font-size: 0.8rem;
-}
-
-.track-btn:hover {
-    background: #a0522d;
 }
 
 /* Chat and Dice Results Combined Section */
@@ -1320,6 +1274,40 @@ body {
     text-overflow: ellipsis;
 }
 
+.token-controls {
+    display: flex;
+    gap: 0.5rem;
+    margin-top: 0.5rem;
+    align-items: center;
+}
+
+.token-name-input {
+    flex: 1;
+    padding: 0.25rem 0.5rem;
+    background: #2c1810;
+    border: 1px solid #8b4513;
+    border-radius: 4px;
+    color: #d4af37;
+    font-size: 0.8rem;
+}
+
+.token-color-input {
+    width: 30px;
+    height: 25px;
+    border: 1px solid #8b4513;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+.token-size-select {
+    padding: 0.25rem;
+    background: #2c1810;
+    border: 1px solid #8b4513;
+    border-radius: 4px;
+    color: #d4af37;
+    font-size: 0.8rem;
+}
+
 .asset-actions {
     display: flex;
     gap: 0.25rem;
@@ -1518,11 +1506,12 @@ body {
     position: relative;
     overflow: auto;
     background: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
 }
 
 #sheetImage, #sheetPdf {
-    width: 100%;
-    height: auto;
     display: block;
 }
 
@@ -1552,7 +1541,7 @@ body {
     font-family: 'Cinzel', serif;
     font-size: 12px;
     color: #2c1810;
-    cursor: move;
+    cursor: pointer;
     pointer-events: all;
     min-width: 60px;
     min-height: 20px;
@@ -1571,24 +1560,46 @@ body {
     box-shadow: 0 0 8px rgba(212, 175, 55, 0.5);
 }
 
-.text-box-delete {
-    position: absolute;
-    top: -8px;
-    right: -8px;
-    width: 16px;
-    height: 16px;
-    background: #8b0000;
-    color: #fff;
-    border: none;
-    border-radius: 50%;
-    font-size: 10px;
-    cursor: pointer;
-    display: none;
+.following-text-box {
+    opacity: 0.8;
+    z-index: 1000;
+    pointer-events: none;
 }
 
-.text-box:hover .text-box-delete,
-.text-box.selected .text-box-delete {
-    display: block;
+.text-box-controls {
+    position: absolute;
+    top: -40px;
+    left: 0;
+    display: none;
+    background: rgba(44, 24, 16, 0.9);
+    border: 1px solid #8b4513;
+    border-radius: 4px;
+    padding: 4px;
+    gap: 4px;
+    z-index: 1001;
+}
+
+.text-color-input, .bg-color-input {
+    width: 25px;
+    height: 20px;
+    border: 1px solid #8b4513;
+    border-radius: 3px;
+    cursor: pointer;
+}
+
+.bold-btn, .delete-btn {
+    background: #8b4513;
+    color: #d4af37;
+    border: none;
+    border-radius: 3px;
+    padding: 2px 6px;
+    cursor: pointer;
+    font-size: 10px;
+    font-weight: bold;
+}
+
+.bold-btn:hover, .delete-btn:hover {
+    background: #a0522d;
 }
 
 .sheet-tools {

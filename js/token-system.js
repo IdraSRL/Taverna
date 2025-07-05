@@ -1,4 +1,4 @@
-// Token system management
+// Token system management - Improved with click-to-move and better UX
 import FirebaseHelper from './firebase.js';
 
 export class TokenSystem {
@@ -8,8 +8,7 @@ export class TokenSystem {
         this.tokens = new Map();
         this.tokensListener = null;
         this.selectedToken = null;
-        this.isDragging = false;
-        this.dragOffset = { x: 0, y: 0 };
+        this.isFollowingMouse = false;
         this.allowPlayerMovement = false;
         this.tokenColors = [
             '#ff6b6b', '#4ecdc4', '#45b7d1', '#96ceb4', '#feca57',
@@ -20,6 +19,7 @@ export class TokenSystem {
             medium: 50,
             large: 70
         };
+        this.pendingTokens = new Map(); // Tokens not yet placed on map
     }
     
     // Initialize token system
@@ -35,35 +35,29 @@ export class TokenSystem {
         const uploadTokenBtn = document.getElementById('uploadTokenBtn');
         const tokenFileInput = document.getElementById('tokenFileInput');
         const tokensLayer = document.getElementById('tokensLayer');
-        const contextMenu = document.getElementById('tokenContextMenu');
+        const mapViewport = document.getElementById('mapViewport');
         
         // Token upload (Master only)
-        uploadTokenBtn.addEventListener('click', () => tokenFileInput.click());
-        tokenFileInput.addEventListener('change', (e) => this.handleTokenUpload(e));
+        if (uploadTokenBtn) uploadTokenBtn.addEventListener('click', () => tokenFileInput.click());
+        if (tokenFileInput) tokenFileInput.addEventListener('change', (e) => this.handleTokenUpload(e));
         
-        // Token interactions
-        tokensLayer.addEventListener('mousedown', (e) => this.handleTokenMouseDown(e));
-        document.addEventListener('mousemove', (e) => this.handleTokenMouseMove(e));
-        document.addEventListener('mouseup', (e) => this.handleTokenMouseUp(e));
-        tokensLayer.addEventListener('contextmenu', (e) => this.handleTokenContextMenu(e));
+        // Token interactions with click-to-move
+        if (tokensLayer) {
+            tokensLayer.addEventListener('click', (e) => this.handleTokenClick(e));
+        }
         
-        // Context menu
-        contextMenu.addEventListener('click', (e) => this.handleContextMenuClick(e));
+        // Map click to place following token
+        if (mapViewport) {
+            mapViewport.addEventListener('click', (e) => this.handleMapClick(e));
+            mapViewport.addEventListener('mousemove', (e) => this.handleMouseMove(e));
+        }
         
-        // Close context menu on outside click
-        document.addEventListener('click', (e) => {
-            if (!contextMenu.contains(e.target)) {
-                contextMenu.style.display = 'none';
+        // Escape to cancel token following
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && this.isFollowingMouse) {
+                this.cancelTokenFollow();
             }
         });
-        
-        // Touch support
-        tokensLayer.addEventListener('touchstart', (e) => this.handleTokenMouseDown(e.touches[0]));
-        document.addEventListener('touchmove', (e) => {
-            e.preventDefault();
-            this.handleTokenMouseMove(e.touches[0]);
-        });
-        document.addEventListener('touchend', (e) => this.handleTokenMouseUp(e));
     }
     
     // Update admin controls visibility
@@ -93,8 +87,10 @@ export class TokenSystem {
         }
         
         const uploadBtn = document.getElementById('uploadTokenBtn');
-        uploadBtn.classList.add('loading');
-        uploadBtn.disabled = true;
+        if (uploadBtn) {
+            uploadBtn.classList.add('loading');
+            uploadBtn.disabled = true;
+        }
         
         try {
             // Create FormData for upload
@@ -112,37 +108,223 @@ export class TokenSystem {
             const result = await response.json();
             
             if (result.success) {
-                // Create token data
+                // Create token data but don't place on map yet
                 const tokenData = {
                     id: FirebaseHelper.generateUserId(),
                     filename: result.filename,
                     url: result.url,
                     name: file.name.replace(/\.[^/.]+$/, ""),
-                    x: 100, // Default position
-                    y: 100,
                     size: 'medium',
-                    color: this.tokenColors[this.tokens.size % this.tokenColors.length],
+                    color: this.tokenColors[this.pendingTokens.size % this.tokenColors.length],
                     uploadedBy: this.authManager.getCurrentUser().name,
-                    timestamp: FirebaseHelper.getTimestamp()
+                    timestamp: FirebaseHelper.getTimestamp(),
+                    onMap: false // Not on map yet
                 };
                 
+                // Add to pending tokens (asset library)
                 const room = this.authManager.getCurrentRoom();
-                await FirebaseHelper.setData(`rooms/${room}/tokens/${tokenData.id}`, tokenData);
+                await FirebaseHelper.setData(`rooms/${room}/assets/token/${tokenData.id}`, tokenData);
                 
                 // Clear file input
                 event.target.value = '';
+                
+                console.log('✅ Token caricato nella libreria:', tokenData.name);
                 
             } else {
                 alert('Errore durante il caricamento: ' + result.error);
             }
             
         } catch (error) {
-            console.error('Upload error:', error);
+            console.error('❌ Errore upload token:', error);
             alert('Errore durante il caricamento del file.');
         } finally {
-            uploadBtn.classList.remove('loading');
-            uploadBtn.disabled = false;
+            if (uploadBtn) {
+                uploadBtn.classList.remove('loading');
+                uploadBtn.disabled = false;
+            }
         }
+    }
+    
+    // Add token to map from library
+    async addTokenToMap(tokenData) {
+        if (!this.authManager.isMaster()) return;
+        
+        // Start following mouse
+        this.selectedToken = tokenData;
+        this.isFollowingMouse = true;
+        
+        // Create temporary visual token
+        this.createFollowingToken(tokenData);
+        
+        console.log('🎭 Token in modalità posizionamento:', tokenData.name);
+    }
+    
+    // Create following token visual
+    createFollowingToken(tokenData) {
+        const tokensLayer = document.getElementById('tokensLayer');
+        if (!tokensLayer) return;
+        
+        // Remove any existing following token
+        const existingFollowing = tokensLayer.querySelector('.following-token');
+        if (existingFollowing) {
+            existingFollowing.remove();
+        }
+        
+        const tokenElement = document.createElement('div');
+        tokenElement.className = 'token following-token';
+        tokenElement.dataset.tokenId = 'following';
+        
+        const size = this.tokenSizes[tokenData.size] || this.tokenSizes.medium;
+        
+        tokenElement.style.cssText = `
+            position: absolute;
+            width: ${size}px;
+            height: ${size}px;
+            border: 3px solid ${tokenData.color};
+            border-radius: 50%;
+            background-image: url(${tokenData.url});
+            background-size: cover;
+            background-position: center;
+            z-index: 200;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+            opacity: 0.8;
+            pointer-events: none;
+            transform: translate(-50%, -50%);
+        `;
+        
+        tokensLayer.appendChild(tokenElement);
+    }
+    
+    // Handle mouse move for following token
+    handleMouseMove(event) {
+        if (!this.isFollowingMouse || !this.selectedToken) return;
+        
+        const followingToken = document.querySelector('.following-token');
+        if (!followingToken) return;
+        
+        const mapContainer = document.getElementById('mapContainer');
+        const mapRect = mapContainer.getBoundingClientRect();
+        
+        const x = event.clientX - mapRect.left;
+        const y = event.clientY - mapRect.top;
+        
+        followingToken.style.left = x + 'px';
+        followingToken.style.top = y + 'px';
+    }
+    
+    // Handle map click to place token
+    async handleMapClick(event) {
+        if (!this.isFollowingMouse || !this.selectedToken) return;
+        
+        event.preventDefault();
+        event.stopPropagation();
+        
+        const mapContainer = document.getElementById('mapContainer');
+        const mapRect = mapContainer.getBoundingClientRect();
+        
+        const x = event.clientX - mapRect.left;
+        const y = event.clientY - mapRect.top;
+        
+        // Place token on map
+        const tokenData = {
+            ...this.selectedToken,
+            x: x,
+            y: y,
+            onMap: true,
+            placedAt: FirebaseHelper.getTimestamp()
+        };
+        
+        const room = this.authManager.getCurrentRoom();
+        
+        try {
+            // Add to active tokens on map
+            await FirebaseHelper.setData(`rooms/${room}/tokens/${tokenData.id}`, tokenData);
+            
+            console.log('✅ Token posizionato sulla mappa:', tokenData.name, 'alle coordinate:', x, y);
+            
+        } catch (error) {
+            console.error('❌ Errore posizionamento token:', error);
+        }
+        
+        this.cancelTokenFollow();
+    }
+    
+    // Cancel token following
+    cancelTokenFollow() {
+        this.isFollowingMouse = false;
+        this.selectedToken = null;
+        
+        // Remove following token visual
+        const followingToken = document.querySelector('.following-token');
+        if (followingToken) {
+            followingToken.remove();
+        }
+        
+        console.log('❌ Posizionamento token annullato');
+    }
+    
+    // Handle token click for movement
+    handleTokenClick(event) {
+        const tokenElement = event.target.closest('.token');
+        if (!tokenElement || tokenElement.classList.contains('following-token')) return;
+        if (!this.canMoveToken()) return;
+        
+        event.preventDefault();
+        event.stopPropagation();
+        
+        const tokenId = tokenElement.dataset.tokenId;
+        
+        if (this.isFollowingMouse && this.selectedToken && this.selectedToken.id === tokenId) {
+            // Stop following
+            this.stopTokenFollow(tokenId);
+        } else {
+            // Start following
+            this.startTokenFollow(tokenId, tokenElement);
+        }
+    }
+    
+    // Start token following mouse
+    startTokenFollow(tokenId, tokenElement) {
+        this.selectedToken = { id: tokenId };
+        this.isFollowingMouse = true;
+        
+        tokenElement.classList.add('following');
+        tokenElement.style.zIndex = '200';
+        tokenElement.style.opacity = '0.8';
+        
+        console.log('🎯 Token in movimento:', tokenId);
+    }
+    
+    // Stop token following and place
+    async stopTokenFollow(tokenId) {
+        const tokenElement = document.querySelector(`[data-token-id="${tokenId}"]`);
+        if (!tokenElement) return;
+        
+        tokenElement.classList.remove('following');
+        tokenElement.style.zIndex = '100';
+        tokenElement.style.opacity = '1';
+        
+        // Save position to Firebase
+        const newX = parseInt(tokenElement.style.left);
+        const newY = parseInt(tokenElement.style.top);
+        
+        const room = this.authManager.getCurrentRoom();
+        
+        try {
+            await FirebaseHelper.updateData(`rooms/${room}/tokens/${tokenId}`, {
+                x: newX,
+                y: newY,
+                lastMoved: FirebaseHelper.getTimestamp()
+            });
+            
+            console.log('✅ Token posizionato:', tokenId, 'alle coordinate:', newX, newY);
+            
+        } catch (error) {
+            console.error('❌ Errore aggiornamento posizione token:', error);
+        }
+        
+        this.isFollowingMouse = false;
+        this.selectedToken = null;
     }
     
     // Listen to tokens
@@ -173,9 +355,11 @@ export class TokenSystem {
         const tokensData = snapshot.val();
         const tokensLayer = document.getElementById('tokensLayer');
         
-        // Clear existing tokens
+        // Clear existing tokens (except following token)
+        const existingTokens = tokensLayer.querySelectorAll('.token:not(.following-token)');
+        existingTokens.forEach(token => token.remove());
+        
         this.tokens.clear();
-        tokensLayer.innerHTML = '';
         
         if (tokensData) {
             Object.entries(tokensData).forEach(([id, tokenData]) => {
@@ -183,6 +367,8 @@ export class TokenSystem {
                 this.createTokenElement(id, tokenData);
             });
         }
+        
+        console.log(`🎭 Aggiornamento token: ${this.tokens.size} token sulla mappa`);
     }
     
     // Create token element
@@ -205,10 +391,11 @@ export class TokenSystem {
             background-image: url(${tokenData.url});
             background-size: cover;
             background-position: center;
-            cursor: ${this.canMoveToken() ? 'grab' : 'default'};
+            cursor: ${this.canMoveToken() ? 'pointer' : 'default'};
             z-index: 100;
             box-shadow: 0 2px 8px rgba(0,0,0,0.3);
-            transition: transform 0.1s ease;
+            transition: transform 0.2s ease, opacity 0.2s ease;
+            transform: translate(-50%, -50%);
         `;
         
         // Add name label
@@ -234,16 +421,35 @@ export class TokenSystem {
         
         // Add hover effect
         tokenElement.addEventListener('mouseenter', () => {
-            if (!this.isDragging) {
-                tokenElement.style.transform = 'scale(1.1)';
+            if (!this.isFollowingMouse) {
+                tokenElement.style.transform = 'translate(-50%, -50%) scale(1.1)';
             }
         });
         
         tokenElement.addEventListener('mouseleave', () => {
-            if (!this.isDragging) {
-                tokenElement.style.transform = 'scale(1)';
+            if (!this.isFollowingMouse) {
+                tokenElement.style.transform = 'translate(-50%, -50%) scale(1)';
             }
         });
+        
+        // Update position if following mouse
+        if (this.isFollowingMouse && this.selectedToken && this.selectedToken.id === id) {
+            document.addEventListener('mousemove', this.updateFollowingTokenPosition.bind(this, tokenElement));
+        }
+    }
+    
+    // Update following token position
+    updateFollowingTokenPosition(tokenElement, event) {
+        if (!this.isFollowingMouse) return;
+        
+        const mapContainer = document.getElementById('mapContainer');
+        const mapRect = mapContainer.getBoundingClientRect();
+        
+        const x = event.clientX - mapRect.left;
+        const y = event.clientY - mapRect.top;
+        
+        tokenElement.style.left = x + 'px';
+        tokenElement.style.top = y + 'px';
     }
     
     // Check if user can move tokens
@@ -251,217 +457,46 @@ export class TokenSystem {
         return this.authManager.isMaster() || this.allowPlayerMovement;
     }
     
-    // Handle token mouse down
-    handleTokenMouseDown(event) {
-        const tokenElement = event.target.closest('.token');
-        if (!tokenElement || !this.canMoveToken()) return;
-        
-        event.preventDefault();
-        event.stopPropagation();
-        
-        const tokenId = tokenElement.dataset.tokenId;
-        const tokenData = this.tokens.get(tokenId);
-        if (!tokenData) return;
-        
-        this.selectedToken = tokenId;
-        this.isDragging = true;
-        
-        const rect = tokenElement.getBoundingClientRect();
-        this.dragOffset = {
-            x: event.clientX - rect.left - rect.width / 2,
-            y: event.clientY - rect.top - rect.height / 2
-        };
-        
-        tokenElement.style.cursor = 'grabbing';
-        tokenElement.style.zIndex = '200';
-        tokenElement.style.transform = 'scale(1.1)';
-    }
-    
-    // Handle token mouse move
-    handleTokenMouseMove(event) {
-        if (!this.isDragging || !this.selectedToken) return;
-        
-        event.preventDefault();
-        
-        const tokenElement = document.querySelector(`[data-token-id="${this.selectedToken}"]`);
-        if (!tokenElement) return;
-        
-        // Get map container bounds
-        const mapContainer = document.getElementById('mapContainer');
-        const mapRect = mapContainer.getBoundingClientRect();
-        
-        // Calculate new position relative to map container
-        const newX = event.clientX - mapRect.left - this.dragOffset.x;
-        const newY = event.clientY - mapRect.top - this.dragOffset.y;
-        
-        // Update token position with smooth movement
-        tokenElement.style.left = newX + 'px';
-        tokenElement.style.top = newY + 'px';
-    }
-    
-    // Handle token mouse up
-    async handleTokenMouseUp(event) {
-        if (!this.isDragging || !this.selectedToken) return;
-        
-        const tokenElement = document.querySelector(`[data-token-id="${this.selectedToken}"]`);
-        if (tokenElement) {
-            tokenElement.style.cursor = this.canMoveToken() ? 'grab' : 'default';
-            tokenElement.style.zIndex = '100';
-            tokenElement.style.transform = 'scale(1)';
-            
-            // Save new position to Firebase
-            const newX = parseInt(tokenElement.style.left);
-            const newY = parseInt(tokenElement.style.top);
-            
-            const room = this.authManager.getCurrentRoom();
-            try {
-                await FirebaseHelper.updateData(`rooms/${room}/tokens/${this.selectedToken}`, {
-                    x: newX,
-                    y: newY
-                });
-            } catch (error) {
-                console.error('Error updating token position:', error);
-            }
-        }
-        
-        this.isDragging = false;
-        this.selectedToken = null;
-    }
-    
-    // Handle token context menu
-    handleTokenContextMenu(event) {
+    // Update token properties (Master only)
+    async updateTokenProperty(tokenId, property, value) {
         if (!this.authManager.isMaster()) return;
         
-        const tokenElement = event.target.closest('.token');
-        if (!tokenElement) return;
-        
-        event.preventDefault();
-        
-        const tokenId = tokenElement.dataset.tokenId;
-        this.selectedToken = tokenId;
-        
-        const contextMenu = document.getElementById('tokenContextMenu');
-        contextMenu.style.display = 'block';
-        contextMenu.style.left = event.pageX + 'px';
-        contextMenu.style.top = event.pageY + 'px';
-    }
-    
-    // Handle context menu click
-    async handleContextMenuClick(event) {
-        const action = event.target.dataset.action;
-        if (!action || !this.selectedToken) return;
-        
-        const contextMenu = document.getElementById('tokenContextMenu');
-        contextMenu.style.display = 'none';
-        
-        switch (action) {
-            case 'rename':
-                await this.renameToken(this.selectedToken);
-                break;
-            case 'resize':
-                await this.resizeToken(this.selectedToken);
-                break;
-            case 'color':
-                await this.changeTokenColor(this.selectedToken);
-                break;
-            case 'delete':
-                await this.deleteToken(this.selectedToken);
-                break;
-        }
-        
-        this.selectedToken = null;
-    }
-    
-    // Rename token
-    async renameToken(tokenId) {
-        const tokenData = this.tokens.get(tokenId);
-        if (!tokenData) return;
-        
-        const newName = prompt('Nuovo nome per il token:', tokenData.name);
-        if (newName && newName.trim() !== tokenData.name) {
-            const room = this.authManager.getCurrentRoom();
-            try {
-                await FirebaseHelper.updateData(`rooms/${room}/tokens/${tokenId}`, {
-                    name: newName.trim()
-                });
-            } catch (error) {
-                console.error('Error renaming token:', error);
-            }
-        }
-    }
-    
-    // Resize token
-    async resizeToken(tokenId) {
-        const tokenData = this.tokens.get(tokenId);
-        if (!tokenData) return;
-        
-        const sizes = ['small', 'medium', 'large'];
-        const currentIndex = sizes.indexOf(tokenData.size);
-        const newSize = sizes[(currentIndex + 1) % sizes.length];
-        
         const room = this.authManager.getCurrentRoom();
+        
         try {
             await FirebaseHelper.updateData(`rooms/${room}/tokens/${tokenId}`, {
-                size: newSize
+                [property]: value,
+                lastModified: FirebaseHelper.getTimestamp()
             });
+            
+            console.log(`✅ Token ${property} aggiornato:`, tokenId, value);
+            
         } catch (error) {
-            console.error('Error resizing token:', error);
+            console.error(`❌ Errore aggiornamento ${property} token:`, error);
         }
     }
     
-    // Change token color
-    async changeTokenColor(tokenId) {
+    // Delete token from map (Master only)
+    async deleteTokenFromMap(tokenId) {
+        if (!this.authManager.isMaster()) return;
+        
         const tokenData = this.tokens.get(tokenId);
         if (!tokenData) return;
         
-        const currentIndex = this.tokenColors.indexOf(tokenData.color);
-        const newColor = this.tokenColors[(currentIndex + 1) % this.tokenColors.length];
-        
-        const room = this.authManager.getCurrentRoom();
-        try {
-            await FirebaseHelper.updateData(`rooms/${room}/tokens/${tokenId}`, {
-                color: newColor
-            });
-        } catch (error) {
-            console.error('Error changing token color:', error);
-        }
-    }
-    
-    // Delete token
-    async deleteToken(tokenId) {
-        const tokenData = this.tokens.get(tokenId);
-        if (!tokenData) return;
-        
-        if (!confirm(`Sei sicuro di voler eliminare il token "${tokenData.name}"?`)) {
+        if (!confirm(`Sei sicuro di voler rimuovere il token "${tokenData.name}" dalla mappa?`)) {
             return;
         }
         
         const room = this.authManager.getCurrentRoom();
         
         try {
-            // Delete file from server
-            const response = await fetch('php/delete.php', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    filename: tokenData.filename,
-                    room: room,
-                    type: 'token'
-                })
-            });
-            
-            const result = await response.json();
-            if (!result.success) {
-                console.warn('File deletion failed:', result.error);
-            }
-            
-            // Remove from Firebase
+            // Remove from active tokens
             await FirebaseHelper.removeData(`rooms/${room}/tokens/${tokenId}`);
             
+            console.log('✅ Token rimosso dalla mappa:', tokenData.name);
+            
         } catch (error) {
-            console.error('Error deleting token:', error);
+            console.error('❌ Errore rimozione token dalla mappa:', error);
         }
     }
     
@@ -469,38 +504,20 @@ export class TokenSystem {
     async clearAllTokens() {
         if (!this.authManager.isMaster()) return;
         
-        if (!confirm('Sei sicuro di voler rimuovere tutti i token?')) {
+        if (!confirm('Sei sicuro di voler rimuovere tutti i token dalla mappa?')) {
             return;
         }
         
         const room = this.authManager.getCurrentRoom();
         
         try {
-            // Delete all token files
-            for (const [tokenId, tokenData] of this.tokens) {
-                const response = await fetch('php/delete.php', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({
-                        filename: tokenData.filename,
-                        room: room,
-                        type: 'token'
-                    })
-                });
-                
-                const result = await response.json();
-                if (!result.success) {
-                    console.warn('File deletion failed:', result.error);
-                }
-            }
-            
             // Remove all from Firebase
             await FirebaseHelper.removeData(`rooms/${room}/tokens`);
             
+            console.log('✅ Tutti i token rimossi dalla mappa');
+            
         } catch (error) {
-            console.error('Error clearing tokens:', error);
+            console.error('❌ Errore pulizia token:', error);
         }
     }
     
@@ -513,7 +530,7 @@ export class TokenSystem {
             await FirebaseHelper.setData(`rooms/${room}/settings/allowTokenMovement`, allowed);
             this.allowPlayerMovement = allowed;
         } catch (error) {
-            console.error('Error setting player movement:', error);
+            console.error('❌ Errore impostazione movimento giocatori:', error);
         }
     }
     
@@ -522,12 +539,19 @@ export class TokenSystem {
         return Array.from(this.tokens.values());
     }
     
+    // Get pending tokens (in library)
+    getPendingTokens() {
+        return Array.from(this.pendingTokens.values());
+    }
+    
     // Cleanup
     cleanup() {
         if (this.tokensListener) {
             FirebaseHelper.stopListening(this.tokensListener);
             this.tokensListener = null;
         }
+        
+        this.cancelTokenFollow();
     }
 }
 

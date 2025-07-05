@@ -1,4 +1,4 @@
-// Character sheet system management
+// Character sheet system management - Enhanced UX
 import FirebaseHelper from './firebase.js';
 
 export class SheetSystem {
@@ -14,8 +14,8 @@ export class SheetSystem {
         this.annotations = [];
         this.textBoxes = [];
         this.selectedTextBox = null;
-        this.isDraggingTextBox = false;
-        this.dragOffset = { x: 0, y: 0 };
+        this.isFollowingMouse = false;
+        this.pendingTextBox = null;
     }
     
     // Initialize sheet system
@@ -64,7 +64,13 @@ export class SheetSystem {
         // Keyboard shortcuts
         document.addEventListener('keydown', (e) => {
             if (modal.style.display === 'block') {
-                if (e.key === 'Escape') this.closeModal();
+                if (e.key === 'Escape') {
+                    if (this.isFollowingMouse) {
+                        this.cancelTextBoxPlacement();
+                    } else {
+                        this.closeModal();
+                    }
+                }
                 if (e.key === 'd' || e.key === 'D') this.setDrawingTool('draw');
                 if (e.key === 'e' || e.key === 'E') this.setDrawingTool('erase');
                 if (e.key === 't' || e.key === 'T') this.setDrawingTool('text');
@@ -78,6 +84,12 @@ export class SheetSystem {
         const modal = document.getElementById('characterSheetModal');
         modal.style.display = 'block';
         
+        // Center modal
+        modal.style.position = 'fixed';
+        modal.style.top = '50%';
+        modal.style.left = '50%';
+        modal.style.transform = 'translate(-50%, -50%)';
+        
         // Initialize canvas if sheet is loaded
         if (this.currentSheet) {
             setTimeout(() => this.initializeCanvas(), 100);
@@ -88,6 +100,9 @@ export class SheetSystem {
     closeModal() {
         const modal = document.getElementById('characterSheetModal');
         modal.style.display = 'none';
+        
+        // Cancel any pending operations
+        this.cancelTextBoxPlacement();
         
         // Save annotations and text boxes if any
         if (this.annotations.length > 0 || this.textBoxes.length > 0) {
@@ -162,7 +177,7 @@ export class SheetSystem {
             }
             
         } catch (error) {
-            console.error('Upload error:', error);
+            console.error('❌ Errore upload scheda:', error);
             alert('Errore durante il caricamento del file.');
         } finally {
             uploadBtn.classList.remove('loading');
@@ -187,7 +202,7 @@ export class SheetSystem {
                 this.displaySheet();
             }
         } catch (error) {
-            console.error('Error loading sheet:', error);
+            console.error('❌ Errore caricamento scheda:', error);
         }
     }
     
@@ -240,12 +255,39 @@ export class SheetSystem {
         this.canvas = canvas;
         this.ctx = canvas.getContext('2d');
         
-        // Set canvas size to match image
-        const rect = sheetImage.getBoundingClientRect();
+        // Calculate optimal size to fit container without vertical scrolling
+        const containerRect = sheetContainer.getBoundingClientRect();
+        const maxWidth = containerRect.width - 40; // Some padding
+        const maxHeight = containerRect.height - 40;
+        
+        const imageAspectRatio = sheetImage.naturalWidth / sheetImage.naturalHeight;
+        
+        let displayWidth, displayHeight;
+        
+        if (maxWidth / maxHeight > imageAspectRatio) {
+            // Height is the limiting factor
+            displayHeight = maxHeight;
+            displayWidth = displayHeight * imageAspectRatio;
+        } else {
+            // Width is the limiting factor
+            displayWidth = maxWidth;
+            displayHeight = displayWidth / imageAspectRatio;
+        }
+        
+        // Set canvas size to match natural image size for precision
         canvas.width = sheetImage.naturalWidth;
         canvas.height = sheetImage.naturalHeight;
-        canvas.style.width = '100%';
-        canvas.style.height = 'auto';
+        
+        // Set display size
+        canvas.style.width = displayWidth + 'px';
+        canvas.style.height = displayHeight + 'px';
+        sheetImage.style.width = displayWidth + 'px';
+        sheetImage.style.height = displayHeight + 'px';
+        
+        // Center the image and canvas
+        sheetContainer.style.display = 'flex';
+        sheetContainer.style.alignItems = 'center';
+        sheetContainer.style.justifyContent = 'center';
         
         // Redraw existing annotations
         this.redrawAnnotations();
@@ -256,6 +298,8 @@ export class SheetSystem {
         // Setup canvas event listeners
         this.setupCanvasEvents();
         this.setupTextBoxEvents();
+        
+        console.log('📋 Canvas inizializzato con dimensioni ottimali:', displayWidth, 'x', displayHeight);
     }
     
     // Setup canvas events
@@ -278,7 +322,9 @@ export class SheetSystem {
         
         const startDrawing = (e) => {
             if (this.drawingTool === 'text') {
-                this.addTextBox(e);
+                if (this.isFollowingMouse) {
+                    this.placeTextBox(e);
+                }
                 return;
             }
             
@@ -348,8 +394,87 @@ export class SheetSystem {
         });
     }
     
-    // Add text box
-    addTextBox(e) {
+    // Start text box placement
+    startTextBoxPlacement() {
+        if (this.drawingTool !== 'text') return;
+        
+        this.isFollowingMouse = true;
+        this.pendingTextBox = {
+            id: Date.now().toString(),
+            text: 'Nuovo testo',
+            fontSize: 14,
+            color: this.drawColor,
+            backgroundColor: 'rgba(255, 255, 255, 0.9)',
+            fontWeight: 'normal'
+        };
+        
+        // Create following visual
+        this.createFollowingTextBox();
+        
+        console.log('📝 Modalità posizionamento testo attivata');
+    }
+    
+    // Create following text box visual
+    createFollowingTextBox() {
+        const textBoxesLayer = document.getElementById('textBoxesLayer');
+        if (!textBoxesLayer || !this.pendingTextBox) return;
+        
+        // Remove any existing following text box
+        const existingFollowing = textBoxesLayer.querySelector('.following-text-box');
+        if (existingFollowing) {
+            existingFollowing.remove();
+        }
+        
+        const element = document.createElement('div');
+        element.className = 'text-box following-text-box';
+        element.contentEditable = false;
+        element.textContent = this.pendingTextBox.text;
+        
+        element.style.cssText = `
+            position: absolute;
+            font-size: ${this.pendingTextBox.fontSize}px;
+            color: ${this.pendingTextBox.color};
+            background: ${this.pendingTextBox.backgroundColor};
+            border: 2px solid #8b4513;
+            border-radius: 4px;
+            padding: 4px 8px;
+            font-family: 'Cinzel', serif;
+            font-weight: ${this.pendingTextBox.fontWeight};
+            pointer-events: none;
+            opacity: 0.8;
+            z-index: 1000;
+            min-width: 60px;
+            min-height: 20px;
+            transform: translate(-50%, -50%);
+        `;
+        
+        textBoxesLayer.appendChild(element);
+        
+        // Follow mouse
+        const canvas = this.canvas;
+        const followMouse = (e) => {
+            if (!this.isFollowingMouse) return;
+            
+            const rect = canvas.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+            
+            element.style.left = x + 'px';
+            element.style.top = y + 'px';
+        };
+        
+        document.addEventListener('mousemove', followMouse);
+        
+        // Store cleanup function
+        this.followMouseCleanup = () => {
+            document.removeEventListener('mousemove', followMouse);
+        };
+    }
+    
+    // Place text box
+    placeTextBox(e) {
+        if (!this.isFollowingMouse || !this.pendingTextBox) return;
+        
         const rect = this.canvas.getBoundingClientRect();
         const scaleX = this.canvas.width / rect.width;
         const scaleY = this.canvas.height / rect.height;
@@ -358,18 +483,36 @@ export class SheetSystem {
         const y = (e.clientY - rect.top) * scaleY;
         
         const textBox = {
-            id: Date.now().toString(),
+            ...this.pendingTextBox,
             x: x,
             y: y,
             width: 100,
-            height: 30,
-            text: 'Nuovo testo',
-            fontSize: 14,
-            color: this.drawColor
+            height: 30
         };
         
         this.textBoxes.push(textBox);
+        this.cancelTextBoxPlacement();
         this.renderTextBoxes();
+        
+        console.log('📝 Casella di testo posizionata:', textBox);
+    }
+    
+    // Cancel text box placement
+    cancelTextBoxPlacement() {
+        this.isFollowingMouse = false;
+        this.pendingTextBox = null;
+        
+        // Remove following text box
+        const followingTextBox = document.querySelector('.following-text-box');
+        if (followingTextBox) {
+            followingTextBox.remove();
+        }
+        
+        // Cleanup mouse follower
+        if (this.followMouseCleanup) {
+            this.followMouseCleanup();
+            this.followMouseCleanup = null;
+        }
     }
     
     // Render text boxes
@@ -377,7 +520,9 @@ export class SheetSystem {
         const textBoxesLayer = document.getElementById('textBoxesLayer');
         if (!textBoxesLayer) return;
         
-        textBoxesLayer.innerHTML = '';
+        // Clear existing text boxes (except following)
+        const existingBoxes = textBoxesLayer.querySelectorAll('.text-box:not(.following-text-box)');
+        existingBoxes.forEach(box => box.remove());
         
         this.textBoxes.forEach(textBox => {
             const element = this.createTextBoxElement(textBox);
@@ -405,12 +550,13 @@ export class SheetSystem {
             height: ${textBox.height * scaleY}px;
             font-size: ${textBox.fontSize * scaleX}px;
             color: ${textBox.color};
-            background: rgba(255, 255, 255, 0.9);
+            background: ${textBox.backgroundColor};
             border: 2px solid #8b4513;
             border-radius: 4px;
             padding: 4px 8px;
             font-family: 'Cinzel', serif;
-            cursor: move;
+            font-weight: ${textBox.fontWeight};
+            cursor: pointer;
             pointer-events: all;
             min-width: 60px;
             min-height: 20px;
@@ -418,15 +564,36 @@ export class SheetSystem {
             overflow: hidden;
         `;
         
-        // Delete button
-        const deleteBtn = document.createElement('button');
-        deleteBtn.className = 'text-box-delete';
-        deleteBtn.innerHTML = '×';
-        deleteBtn.onclick = (e) => {
+        // Text box controls
+        const controls = document.createElement('div');
+        controls.className = 'text-box-controls';
+        controls.style.cssText = `
+            position: absolute;
+            top: -40px;
+            left: 0;
+            display: none;
+            background: rgba(44, 24, 16, 0.9);
+            border: 1px solid #8b4513;
+            border-radius: 4px;
+            padding: 4px;
+            gap: 4px;
+            z-index: 1001;
+        `;
+        
+        controls.innerHTML = `
+            <input type="color" class="text-color-input" value="${textBox.color}" title="Colore Testo">
+            <input type="color" class="bg-color-input" value="${textBox.backgroundColor}" title="Colore Sfondo">
+            <button class="bold-btn" title="Grassetto">${textBox.fontWeight === 'bold' ? 'B' : 'b'}</button>
+            <button class="delete-btn" title="Elimina">×</button>
+        `;
+        
+        element.appendChild(controls);
+        
+        // Show controls on selection
+        element.addEventListener('click', (e) => {
             e.stopPropagation();
-            this.deleteTextBox(textBox.id);
-        };
-        element.appendChild(deleteBtn);
+            this.selectTextBox(textBox.id);
+        });
         
         return element;
     }
@@ -436,21 +603,31 @@ export class SheetSystem {
         const textBoxesLayer = document.getElementById('textBoxesLayer');
         if (!textBoxesLayer) return;
         
-        textBoxesLayer.addEventListener('mousedown', (e) => {
-            if (e.target.classList.contains('text-box')) {
-                this.selectTextBox(e.target.dataset.textBoxId);
-                this.startDragTextBox(e);
+        // Click outside to deselect
+        document.addEventListener('click', (e) => {
+            if (!e.target.closest('.text-box')) {
+                this.deselectAllTextBoxes();
             }
         });
         
-        textBoxesLayer.addEventListener('mousemove', (e) => {
-            if (this.isDraggingTextBox) {
-                this.dragTextBox(e);
+        // Handle text box controls
+        textBoxesLayer.addEventListener('change', (e) => {
+            if (e.target.classList.contains('text-color-input')) {
+                this.updateTextBoxProperty(e.target.closest('.text-box').dataset.textBoxId, 'color', e.target.value);
+            } else if (e.target.classList.contains('bg-color-input')) {
+                this.updateTextBoxProperty(e.target.closest('.text-box').dataset.textBoxId, 'backgroundColor', e.target.value);
             }
         });
         
-        textBoxesLayer.addEventListener('mouseup', () => {
-            this.stopDragTextBox();
+        textBoxesLayer.addEventListener('click', (e) => {
+            if (e.target.classList.contains('bold-btn')) {
+                const textBox = this.textBoxes.find(tb => tb.id === e.target.closest('.text-box').dataset.textBoxId);
+                const newWeight = textBox.fontWeight === 'bold' ? 'normal' : 'bold';
+                this.updateTextBoxProperty(textBox.id, 'fontWeight', newWeight);
+                e.target.textContent = newWeight === 'bold' ? 'B' : 'b';
+            } else if (e.target.classList.contains('delete-btn')) {
+                this.deleteTextBox(e.target.closest('.text-box').dataset.textBoxId);
+            }
         });
         
         textBoxesLayer.addEventListener('input', (e) => {
@@ -462,58 +639,38 @@ export class SheetSystem {
     
     // Select text box
     selectTextBox(id) {
-        // Remove previous selection
-        document.querySelectorAll('.text-box').forEach(el => {
-            el.classList.remove('selected');
-        });
+        this.deselectAllTextBoxes();
         
-        // Select new text box
         const element = document.querySelector(`[data-text-box-id="${id}"]`);
         if (element) {
             element.classList.add('selected');
+            const controls = element.querySelector('.text-box-controls');
+            if (controls) {
+                controls.style.display = 'flex';
+            }
             this.selectedTextBox = id;
         }
     }
     
-    // Start dragging text box
-    startDragTextBox(e) {
-        if (e.target.classList.contains('text-box-delete')) return;
-        
-        this.isDraggingTextBox = true;
-        const rect = e.target.getBoundingClientRect();
-        this.dragOffset = {
-            x: e.clientX - rect.left,
-            y: e.clientY - rect.top
-        };
+    // Deselect all text boxes
+    deselectAllTextBoxes() {
+        document.querySelectorAll('.text-box').forEach(el => {
+            el.classList.remove('selected');
+            const controls = el.querySelector('.text-box-controls');
+            if (controls) {
+                controls.style.display = 'none';
+            }
+        });
+        this.selectedTextBox = null;
     }
     
-    // Drag text box
-    dragTextBox(e) {
-        if (!this.isDraggingTextBox || !this.selectedTextBox) return;
-        
-        const element = document.querySelector(`[data-text-box-id="${this.selectedTextBox}"]`);
-        if (!element) return;
-        
-        const containerRect = this.canvas.getBoundingClientRect();
-        const newX = e.clientX - containerRect.left - this.dragOffset.x;
-        const newY = e.clientY - containerRect.top - this.dragOffset.y;
-        
-        element.style.left = newX + 'px';
-        element.style.top = newY + 'px';
-        
-        // Update text box data
-        const textBox = this.textBoxes.find(tb => tb.id === this.selectedTextBox);
+    // Update text box property
+    updateTextBoxProperty(id, property, value) {
+        const textBox = this.textBoxes.find(tb => tb.id === id);
         if (textBox) {
-            const scaleX = this.canvas.width / containerRect.width;
-            const scaleY = this.canvas.height / containerRect.height;
-            textBox.x = newX * scaleX;
-            textBox.y = newY * scaleY;
+            textBox[property] = value;
+            this.renderTextBoxes();
         }
-    }
-    
-    // Stop dragging text box
-    stopDragTextBox() {
-        this.isDraggingTextBox = false;
     }
     
     // Update text box content
@@ -553,8 +710,10 @@ export class SheetSystem {
         if (this.canvas) {
             if (tool === 'text') {
                 this.canvas.style.cursor = 'crosshair';
+                this.startTextBoxPlacement();
             } else {
                 this.canvas.style.cursor = tool === 'draw' ? 'crosshair' : 'grab';
+                this.cancelTextBoxPlacement();
             }
         }
     }
@@ -623,7 +782,7 @@ export class SheetSystem {
                 textBoxes: this.textBoxes
             });
         } catch (error) {
-            console.error('Error saving sheet data:', error);
+            console.error('❌ Errore salvataggio dati scheda:', error);
         }
     }
     
@@ -654,7 +813,7 @@ export class SheetSystem {
             
             const result = await response.json();
             if (!result.success) {
-                console.warn('File deletion failed:', result.error);
+                console.warn('⚠️ Fallimento eliminazione file:', result.error);
             }
             
             // Remove from Firebase
@@ -667,7 +826,7 @@ export class SheetSystem {
             this.displaySheet();
             
         } catch (error) {
-            console.error('Error removing sheet:', error);
+            console.error('❌ Errore rimozione scheda:', error);
         }
     }
     
@@ -682,6 +841,8 @@ export class SheetSystem {
         if (this.annotations.length > 0 || this.textBoxes.length > 0) {
             this.saveSheetData();
         }
+        
+        this.cancelTextBoxPlacement();
     }
 }
 

@@ -1,4 +1,4 @@
-// Master panel management - New streamlined approach
+// Master panel management - Enhanced with token management
 import FirebaseHelper from './firebase.js';
 
 export class MasterPanel {
@@ -14,10 +14,12 @@ export class MasterPanel {
             tokens: [],
             music: []
         };
+        this.activeTokens = new Map();
         this.assetsListeners = {
             maps: null,
             tokens: null,
-            music: null
+            music: null,
+            activeTokens: null
         };
     }
     
@@ -161,6 +163,11 @@ export class MasterPanel {
         this.assetsListeners.music = FirebaseHelper.listenToData(`rooms/${room}/playlist`, (snapshot) => {
             this.handleAssetsUpdate('music', snapshot);
         });
+        
+        // Listen to active tokens on map
+        this.assetsListeners.activeTokens = FirebaseHelper.listenToData(`rooms/${room}/tokens`, (snapshot) => {
+            this.handleActiveTokensUpdate(snapshot);
+        });
     }
     
     // Handle assets update
@@ -176,6 +183,28 @@ export class MasterPanel {
             
         } catch (error) {
             console.error(`❌ Errore aggiornamento asset ${type}:`, error);
+        }
+    }
+    
+    // Handle active tokens update
+    handleActiveTokensUpdate(snapshot) {
+        try {
+            const tokensData = snapshot.val();
+            this.activeTokens.clear();
+            
+            if (tokensData) {
+                Object.entries(tokensData).forEach(([id, tokenData]) => {
+                    this.activeTokens.set(id, tokenData);
+                });
+            }
+            
+            console.log(`🎯 Aggiornamento token attivi: ${this.activeTokens.size} token sulla mappa`);
+            
+            // Update active tokens display
+            this.updateActiveTokensDisplay();
+            
+        } catch (error) {
+            console.error('❌ Errore aggiornamento token attivi:', error);
         }
     }
     
@@ -205,15 +234,28 @@ export class MasterPanel {
             const musicData = musicSnapshot.val();
             this.assetsData.music = musicData ? Object.values(musicData) : [];
             
+            // Load active tokens
+            const activeTokensRef = FirebaseHelper.getRef(`rooms/${room}/tokens`);
+            const activeTokensSnapshot = await activeTokensRef.once('value');
+            const activeTokensData = activeTokensSnapshot.val();
+            this.activeTokens.clear();
+            if (activeTokensData) {
+                Object.entries(activeTokensData).forEach(([id, tokenData]) => {
+                    this.activeTokens.set(id, tokenData);
+                });
+            }
+            
             // Update all displays
             this.updateLibraryDisplay('maps');
             this.updateLibraryDisplay('tokens');
             this.updateLibraryDisplay('music');
+            this.updateActiveTokensDisplay();
             
             console.log('✅ Asset caricati:', {
                 maps: this.assetsData.maps.length,
                 tokens: this.assetsData.tokens.length,
-                music: this.assetsData.music.length
+                music: this.assetsData.music.length,
+                activeTokens: this.activeTokens.size
             });
             
         } catch (error) {
@@ -241,6 +283,29 @@ export class MasterPanel {
         assets.forEach(asset => {
             const assetElement = this.createAssetElement(asset, type);
             libraryContent.appendChild(assetElement);
+        });
+    }
+    
+    // Update active tokens display
+    updateActiveTokensDisplay() {
+        const libraryContent = document.getElementById('activeTokensLibrary');
+        const libraryCount = document.getElementById('activeTokensCount');
+        
+        if (!libraryContent || !libraryCount) return;
+        
+        const tokens = Array.from(this.activeTokens.values());
+        libraryCount.textContent = tokens.length;
+        
+        libraryContent.innerHTML = '';
+        
+        if (tokens.length === 0) {
+            libraryContent.innerHTML = '<div class="no-assets">Nessun token sulla mappa</div>';
+            return;
+        }
+        
+        tokens.forEach(token => {
+            const tokenElement = this.createActiveTokenElement(token);
+            libraryContent.appendChild(tokenElement);
         });
     }
     
@@ -275,6 +340,56 @@ export class MasterPanel {
         });
         
         return assetDiv;
+    }
+    
+    // Create active token element
+    createActiveTokenElement(token) {
+        const tokenDiv = document.createElement('div');
+        tokenDiv.className = 'library-asset active-token';
+        tokenDiv.dataset.tokenId = token.id;
+        
+        tokenDiv.innerHTML = `
+            <div class="asset-preview">
+                <img src="${token.url}" alt="${token.name}">
+            </div>
+            <div class="asset-info">
+                <div class="asset-name">${token.name}</div>
+                <div class="token-controls">
+                    <input type="text" class="token-name-input" value="${token.name}" onchange="window.masterPanel.updateTokenName('${token.id}', this.value)">
+                    <input type="color" class="token-color-input" value="${token.color}" onchange="window.masterPanel.updateTokenColor('${token.id}', this.value)">
+                    <select class="token-size-select" onchange="window.masterPanel.updateTokenSize('${token.id}', this.value)">
+                        <option value="small" ${token.size === 'small' ? 'selected' : ''}>S</option>
+                        <option value="medium" ${token.size === 'medium' ? 'selected' : ''}>M</option>
+                        <option value="large" ${token.size === 'large' ? 'selected' : ''}>L</option>
+                    </select>
+                </div>
+            </div>
+            <div class="asset-actions">
+                <button class="asset-action-btn delete" onclick="window.masterPanel.removeTokenFromMap('${token.id}')" title="Rimuovi dalla Mappa">🗑️</button>
+            </div>
+        `;
+        
+        return tokenDiv;
+    }
+    
+    // Update token name
+    async updateTokenName(tokenId, newName) {
+        await this.tokenSystem.updateTokenProperty(tokenId, 'name', newName.trim());
+    }
+    
+    // Update token color
+    async updateTokenColor(tokenId, newColor) {
+        await this.tokenSystem.updateTokenProperty(tokenId, 'color', newColor);
+    }
+    
+    // Update token size
+    async updateTokenSize(tokenId, newSize) {
+        await this.tokenSystem.updateTokenProperty(tokenId, 'size', newSize);
+    }
+    
+    // Remove token from map
+    async removeTokenFromMap(tokenId) {
+        await this.tokenSystem.deleteTokenFromMap(tokenId);
     }
     
     // Trigger file upload
@@ -419,20 +534,8 @@ export class MasterPanel {
                     break;
                     
                 case 'tokens':
-                    // Add token to map center
-                    const tokenData = {
-                        id: FirebaseHelper.generateUserId(),
-                        filename: asset.filename,
-                        url: asset.url,
-                        name: asset.name,
-                        x: 200, // Center position
-                        y: 200,
-                        size: 'medium',
-                        color: '#ff6b6b',
-                        uploadedBy: this.authManager.getCurrentUser().name,
-                        timestamp: FirebaseHelper.getTimestamp()
-                    };
-                    await FirebaseHelper.setData(`rooms/${room}/tokens/${tokenData.id}`, tokenData);
+                    // Add token to map (start following mouse)
+                    await this.tokenSystem.addTokenToMap(asset);
                     break;
                     
                 case 'music':
@@ -554,7 +657,7 @@ export class MasterPanel {
     
     // Clear tokens
     async clearTokens() {
-        if (!confirm('Sei sicuro di voler rimuovere tutti i token?')) {
+        if (!confirm('Sei sicuro di voler rimuovere tutti i token dalla mappa?')) {
             return;
         }
         
@@ -593,7 +696,8 @@ export class MasterPanel {
         this.assetsListeners = {
             maps: null,
             tokens: null,
-            music: null
+            music: null,
+            activeTokens: null
         };
     }
 }

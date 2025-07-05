@@ -1,4 +1,4 @@
-// Ping system for map interactions
+// Ping system for map interactions - Enhanced visual design
 import FirebaseHelper from './firebase.js';
 
 export class PingSystem {
@@ -7,7 +7,7 @@ export class PingSystem {
         this.mapSystem = mapSystem;
         this.pingsListener = null;
         this.activePings = new Map();
-        this.pingDuration = 3000; // 3 seconds
+        this.pingDuration = 4000; // 4 seconds
         this.pingColors = [
             '#ff6b6b', '#4ecdc4', '#45b7d1', '#96ceb4', '#feca57',
             '#ff9ff3', '#54a0ff', '#5f27cd', '#00d2d3', '#ff9f43'
@@ -169,43 +169,85 @@ export class PingSystem {
         pingElement.className = 'map-ping';
         pingElement.dataset.pingId = pingId;
         
-        // Position ping using map coordinates
+        // Enhanced ping design
         pingElement.style.cssText = `
             position: absolute;
             left: ${pingData.x}px;
             top: ${pingData.y}px;
-            width: 40px;
-            height: 40px;
-            border: 3px solid ${pingData.userColor};
-            border-radius: 50%;
-            background: rgba(255, 255, 255, 0.2);
+            width: 60px;
+            height: 60px;
             pointer-events: none;
             z-index: 1000;
-            animation: pingPulse 0.6s ease-out;
             transform: translate(-50%, -50%);
-            box-shadow: 0 0 20px ${pingData.userColor};
         `;
         
-        // Add user name label
+        // Create ripple effect
+        const ripple1 = document.createElement('div');
+        ripple1.className = 'ping-ripple';
+        ripple1.style.cssText = `
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            border: 3px solid ${pingData.userColor};
+            border-radius: 50%;
+            animation: pingRipple 2s ease-out infinite;
+            opacity: 0.8;
+        `;
+        
+        const ripple2 = document.createElement('div');
+        ripple2.className = 'ping-ripple';
+        ripple2.style.cssText = `
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            border: 2px solid ${pingData.userColor};
+            border-radius: 50%;
+            animation: pingRipple 2s ease-out infinite 0.5s;
+            opacity: 0.6;
+        `;
+        
+        // Create center dot
+        const centerDot = document.createElement('div');
+        centerDot.className = 'ping-center';
+        centerDot.style.cssText = `
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 12px;
+            height: 12px;
+            background: ${pingData.userColor};
+            border: 2px solid #fff;
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+            box-shadow: 0 0 15px ${pingData.userColor};
+            animation: pingPulse 1s ease-in-out infinite;
+        `;
+        
+        // Add user name label with enhanced styling
         const nameLabel = document.createElement('div');
         nameLabel.className = 'ping-name';
         nameLabel.textContent = pingData.userName;
         nameLabel.style.cssText = `
             position: absolute;
-            bottom: -30px;
+            bottom: -35px;
             left: 50%;
             transform: translateX(-50%);
-            background: rgba(0,0,0,0.8);
+            background: linear-gradient(135deg, rgba(0,0,0,0.9) 0%, rgba(44,24,16,0.9) 100%);
             color: ${pingData.userColor};
-            padding: 3px 8px;
-            border-radius: 4px;
-            font-size: 11px;
+            padding: 4px 10px;
+            border-radius: 8px;
+            font-size: 12px;
+            font-weight: 600;
             white-space: nowrap;
             pointer-events: none;
-            font-weight: 600;
             border: 1px solid ${pingData.userColor};
+            box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+            animation: pingNameFade 0.5s ease-out;
         `;
         
+        pingElement.appendChild(ripple1);
+        pingElement.appendChild(ripple2);
+        pingElement.appendChild(centerDot);
         pingElement.appendChild(nameLabel);
         tokensLayer.appendChild(pingElement);
         
@@ -227,12 +269,12 @@ export class PingSystem {
     removePing(pingId) {
         const ping = this.activePings.get(pingId);
         if (ping && ping.element && ping.element.parentNode) {
-            ping.element.style.animation = 'pingFadeOut 0.3s ease-in';
+            ping.element.style.animation = 'pingFadeOut 0.5s ease-in';
             setTimeout(() => {
                 if (ping.element.parentNode) {
                     ping.element.parentNode.removeChild(ping.element);
                 }
-            }, 300);
+            }, 500);
         }
         this.activePings.delete(pingId);
         
