@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Taverna dei Cani di Odino</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Uncial+Antiqua&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css?v=1.0.6&t=1736086298&r=abc123">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
+</head>
+<body>
+    <!-- Version Display -->
+    <div id="versionDisplay" class="version-display">
+        <span id="versionText">v1.0.6</span>
+        <button id="reloadBtn" class="reload-btn" title="Ricarica applicazione">🔄</button>
+    </div>
+
+    <!-- Login Screen -->
+    <div id="loginScreen" class="login-screen">
+        <div class="login-container">
+            <div class="tavern-logo">
+                <h1>🐺 Taverna dei Cani di Odino 🐺</h1>
+                <p>Benvenuto, valoroso guerriero</p>
+            </div>
+            
+            <div class="login-form">
+                <div class="role-switch">
+                    <button id="playerTab" class="role-tab active">Giocatore</button>
+                    <button id="masterTab" class="role-tab">Master</button>
+                </div>
+                
+                <form id="loginForm">
+                    <div class="form-group">
+                        <label for="playerName">Nome</label>
+                        <input type="text" id="playerName" name="name" required>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="roomName">Nome Stanza</label>
+                        <input type="text" id="roomName" name="room" required>
+                    </div>
+                    
+                    <div class="form-group" id="passwordGroup" style="display: none;">
+                        <label for="masterPassword">Password Master</label>
+                        <input type="password" id="masterPassword" name="password" placeholder="Inserisci password admin">
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="avatarUpload">Avatar (opzionale)</label>
+                        <input type="file" id="avatarUpload" accept="image/png,image/jpeg">
+                        <div class="avatar-preview" id="avatarPreview"></div>
+                    </div>
+                    
+                    <button type="submit" class="enter-btn">Entra nella Taverna</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Game Interface -->
+    <div id="gameInterface" class="game-interface" style="display: none;">
+        <!-- Header -->
+        <header class="game-header">
+            <div class="room-info">
+                <h2 id="currentRoomName">Stanza</h2>
+                <div class="room-subtitle">Taverna dei Cani di Odino</div>
+            </div>
+            
+            <div class="users-list" id="usersList">
+                <!-- Users will be populated dynamically -->
+            </div>
+            
+            <div class="header-actions">
+                <button id="characterSheetBtn" class="header-btn" title="Scheda Personaggio">📋</button>
+                <button id="adminPanelBtn" class="header-btn admin-only" style="display: none;" title="Pannello Admin">⚙️</button>
+                <button id="exitBtn" class="exit-btn">🚪 Esci</button>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <main class="game-main">
+            <!-- Left Column - Dice Section -->
+            <section class="dice-section">
+                <div class="section-header">
+                    <h3>🎲 Sistema Dadi</h3>
+                </div>
+                <div class="section-content">
+                    <div class="dice-controls">
+                        <div class="dice-groups" id="diceGroups">
+                            <!-- Dice groups will be added dynamically -->
+                        </div>
+                        
+                        <div class="dice-actions">
+                            <button id="addDiceGroup" class="add-group-btn">+ Aggiungi Gruppo</button>
+                            <button id="rollAllDice" class="roll-btn" disabled>🎲 Lancia Dadi</button>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Center Column - Map Section -->
+            <section class="map-section">
+                <div class="section-header">
+                    <h3>🗺️ Mappa</h3>
+                    <div class="map-controls">
+                        <button id="uploadMapBtn" class="map-btn admin-only" style="display: none;" title="Carica Mappa">📁</button>
+                        <button id="uploadTokenBtn" class="map-btn admin-only" style="display: none;" title="Carica Token">🎭</button>
+                        <button id="zoomInBtn" class="map-btn" title="Zoom In">🔍+</button>
+                        <button id="zoomOutBtn" class="map-btn" title="Zoom Out">🔍-</button>
+                        <button id="resetZoomBtn" class="map-btn" title="Reset Zoom">🎯</button>
+                    </div>
+                </div>
+                <div class="section-content">
+                    <div class="map-container" id="mapContainer">
+                        <div class="map-viewport" id="mapViewport">
+                            <div class="map-canvas" id="mapCanvas">
+                                <div class="no-map">
+                                    <p>Nessuna mappa caricata</p>
+                                    <p class="admin-only" style="display: none;">Carica una mappa per iniziare</p>
+                                    <p class="ping-hint">💡 Doppio click per fare ping sulla mappa</p>
+                                </div>
+                                <img id="mapImage" class="map-image" style="display: none;">
+                                <div id="tokensLayer" class="tokens-layer"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Right Column - Chat & Music Section -->
+            <section class="chat-section">
+                <!-- Music Player -->
+                <div class="music-player">
+                    <div class="music-header">
+                        <h4>🎵 Musica Condivisa</h4>
+                        <div class="music-controls">
+                            <button id="playPauseBtn" class="music-btn" disabled>▶️</button>
+                            <button id="loopBtn" class="music-btn">🔁</button>
+                            <input type="range" id="volumeSlider" class="volume-slider" min="0" max="100" value="50">
+                        </div>
+                    </div>
+                    
+                    <div class="current-track" id="currentTrack">
+                        <span class="track-name">Nessuna traccia selezionata</span>
+                        <span class="track-time">--:-- / --:--</span>
+                    </div>
+                    
+                    <div class="playlist" id="playlist">
+                        <!-- Playlist items will be populated dynamically -->
+                    </div>
+                    
+                    <div class="music-upload admin-only" id="musicUpload" style="display: none;">
+                        <input type="file" id="musicFile" accept="audio/mp3" style="display: none;">
+                        <button id="uploadMusicBtn" class="upload-btn">📁 Carica MP3</button>
+                    </div>
+                </div>
+
+                <!-- Chat and Dice Results Container -->
+                <div class="chat-dice-container">
+                    <!-- Dice Results Section -->
+                    <div class="dice-results-section">
+                        <div class="dice-results-header">
+                            <h4>🎲 Risultati Dadi</h4>
+                        </div>
+                        <div class="dice-results-content" id="diceResults">
+                            <div class="no-results">Nessun lancio ancora...</div>
+                        </div>
+                    </div>
+
+                    <!-- Chat Section -->
+                    <div class="chat-container">
+                        <div class="section-header">
+                            <h3>💬 Chat</h3>
+                        </div>
+                        
+                        <div class="chat-messages" id="chatMessages">
+                            <div class="no-messages">Nessun messaggio ancora...</div>
+                        </div>
+                        
+                        <div class="chat-input">
+                            <input type="text" id="messageInput" placeholder="Scrivi un messaggio..." maxlength="500">
+                            <button id="sendMessageBtn" class="send-btn">📤</button>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- Character Sheet Modal -->
+    <div id="characterSheetModal" class="modal-overlay" style="display: none;">
+        <div class="modal-dialog character-sheet-dialog">
+            <div class="modal-header">
+                <h3>📋 Scheda Personaggio</h3>
+                <button class="modal-close">&times;</button>
+            </div>
+            <div class="modal-content">
+                <div class="sheet-upload" id="sheetUpload">
+                    <input type="file" id="sheetFile" accept="image/*,application/pdf" style="display: none;">
+                    <button id="uploadSheetBtn" class="upload-btn">📁 Carica Scheda (IMG/PDF)</button>
+                    <button id="removeSheetBtn" class="remove-btn" style="display: none;">🗑️ Rimuovi Scheda</button>
+                </div>
+                <div class="sheet-viewer" id="sheetViewer">
+                    <div class="no-sheet">Nessuna scheda caricata</div>
+                    <div class="sheet-content" id="sheetContent" style="display: none;">
+                        <div class="sheet-container">
+                            <img id="sheetImage" style="display: none;">
+                            <iframe id="sheetPdf" style="display: none;"></iframe>
+                            <canvas id="annotationCanvas" class="annotation-canvas"></canvas>
+                            <div id="textBoxesLayer" class="text-boxes-layer"></div>
+                        </div>
+                    </div>
+                </div>
+                <div class="sheet-tools" id="sheetTools" style="display: none;">
+                    <button id="drawBtn" class="tool-btn active">✏️ Disegna</button>
+                    <button id="eraseBtn" class="tool-btn">🧽 Cancella</button>
+                    <button id="textBtn" class="tool-btn">📝 Testo</button>
+                    <input type="color" id="drawColor" value="#ff0000">
+                    <input type="range" id="drawSize" min="1" max="10" value="3">
+                    <button id="clearAnnotationsBtn" class="tool-btn">🗑️ Pulisci</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Admin Panel Modal -->
+    <div id="adminPanelModal" class="modal-overlay" style="display: none;">
+        <div class="modal-dialog admin-panel-dialog">
+            <div class="modal-header">
+                <h3>⚙️ Pannello Admin</h3>
+                <button class="modal-close">&times;</button>
+            </div>
+            <div class="modal-content">
+                <div class="admin-tabs">
+                    <button class="admin-tab active" data-tab="assets">📁 Asset</button>
+                    <button class="admin-tab" data-tab="users">👥 Utenti</button>
+                    <button class="admin-tab" data-tab="room">🏠 Stanza</button>
+                </div>
+                
+                <div class="admin-content">
+                    <!-- Assets Tab -->
+                    <div id="assetsTab" class="admin-tab-content active">
+                        <h4>Libreria Asset</h4>
+                        <div class="asset-categories">
+                            <div class="asset-category">
+                                <h5>🗺️ Mappe</h5>
+                                <div class="asset-controls">
+                                    <input type="file" id="mapAssetInput" accept="image/*" style="display: none;" multiple>
+                                    <button id="uploadMapAssetBtn" class="upload-asset-btn">📁 Carica Mappe</button>
+                                </div>
+                                <div id="mapsAssetList" class="assets-list"></div>
+                            </div>
+                            <div class="asset-category">
+                                <h5>🎭 Token</h5>
+                                <div class="asset-controls">
+                                    <input type="file" id="tokenAssetInput" accept="image/*" style="display: none;" multiple>
+                                    <button id="uploadTokenAssetBtn" class="upload-asset-btn">📁 Carica Token</button>
+                                </div>
+                                <div id="tokensAssetList" class="assets-list"></div>
+                            </div>
+                            <div class="asset-category">
+                                <h5>🎵 Musica</h5>
+                                <div class="asset-controls">
+                                    <input type="file" id="musicAssetInput" accept="audio/*" style="display: none;" multiple>
+                                    <button id="uploadMusicAssetBtn" class="upload-asset-btn">📁 Carica Musica</button>
+                                </div>
+                                <div id="musicAssetList" class="assets-list"></div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Users Tab -->
+                    <div id="usersTab" class="admin-tab-content">
+                        <h4>Gestione Utenti</h4>
+                        <div class="users-management">
+                            <div class="setting-item">
+                                <label>
+                                    <input type="checkbox" id="allowTokenMovement"> 
+                                    Permetti ai giocatori di muovere i token
+                                </label>
+                            </div>
+                            <div id="usersListAdmin" class="users-list-admin"></div>
+                        </div>
+                    </div>
+                    
+                    <!-- Room Tab -->
+                    <div id="roomTab" class="admin-tab-content">
+                        <h4>Gestione Stanza</h4>
+                        <div class="room-actions">
+                            <button id="clearTokensBtn" class="action-btn warning">🎭 Rimuovi Tutti i Token</button>
+                            <button id="resetMapBtn" class="action-btn warning">🗺️ Reset Mappa</button>
+                            <button id="clearChatBtn" class="action-btn warning">💬 Svuota Chat</button>
+                            <button id="clearPlaylistBtn" class="action-btn warning">🎵 Svuota Playlist</button>
+                            <button id="clearPingsBtn" class="action-btn warning">📍 Cancella Ping</button>
+                            <button id="deleteRoomBtn" class="action-btn danger">🗑️ Elimina Stanza</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Token Context Menu -->
+    <div id="tokenContextMenu" class="context-menu" style="display: none;">
+        <div class="context-item" data-action="rename">✏️ Rinomina</div>
+        <div class="context-item" data-action="resize">📏 Ridimensiona</div>
+        <div class="context-item" data-action="color">🎨 Cambia Colore</div>
+        <div class="context-item" data-action="delete">🗑️ Elimina</div>
+    </div>
+
+    <!-- Hidden File Inputs -->
+    <input type="file" id="mapFileInput" accept="image/png,image/jpeg" style="display: none;">
+    <input type="file" id="tokenFileInput" accept="image/png" style="display: none;">
+
+    <!-- Audio element for music playback -->
+    <audio id="musicPlayer" preload="metadata"></audio>
+
+    <!-- Firebase Scripts -->
+    <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js?v=1.0.6&t=1736086298&r=abc123"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js?v=1.0.6&t=1736086298&r=abc123"></script>
+    
+    <!-- App Scripts -->
+    <script type="module" src="js/main.js?v=1.0.6&t=1736086298&r=abc123"></script>
+</body>
+</html>

@@ -1,0 +1,15 @@
+{
+  "name": "taverna-cani-odino",
+  "version": "1.0.0",
+  "description": "WebApp multiplayer fantasy per sessioni di gioco di ruolo online",
+  "main": "index.html",
+  "scripts": {
+    "start": "php -S localhost:8000",
+    "dev": "php -S localhost:8000"
+  },
+  "keywords": ["fantasy", "multiplayer", "gaming", "roleplay", "tavern"],
+  "author": "Taverna dei Cani di Odino",
+  "license": "MIT",
+  "dependencies": {},
+  "devDependencies": {}
+}
