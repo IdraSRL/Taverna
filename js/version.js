@@ -1,11 +1,13 @@
-// Version management system
+// Version management system - Enhanced cache busting
 export const AppVersion = {
-    version: '1.0.6',
+    version: '1.0.7',
     buildDate: new Date().toISOString(),
     
-    // Get version string for cache busting
+    // Get version string for aggressive cache busting
     getVersionString() {
-        return `v=${this.version}&t=${Date.now()}&r=${Math.random().toString(36).substr(2, 9)}`;
+        const timestamp = Date.now();
+        const random = Math.random().toString(36).substr(2, 9);
+        return `v=${this.version}&t=${timestamp}&r=${random}&nocache=true&bust=${timestamp}`;
     },
     
     // Get version for display
@@ -56,15 +58,58 @@ export const AppVersion = {
         // Clear sessionStorage
         sessionStorage.clear();
         
-        // Add cache busting parameters to current URL
+        // Add aggressive cache busting parameters to current URL
         const url = new URL(window.location);
         url.searchParams.set('v', this.version);
         url.searchParams.set('t', Date.now());
         url.searchParams.set('r', Math.random().toString(36).substr(2, 9));
+        url.searchParams.set('nocache', 'true');
+        url.searchParams.set('bust', Date.now());
+        url.searchParams.set('reload', 'force');
         
-        // Force reload with cache bypass
-        window.location.href = url.toString();
+        // Force hard reload
+        window.location.replace(url.toString());
+    },
+    
+    // Disable cache for all resources
+    disableCache() {
+        // Add meta tags to disable cache
+        const metaTags = [
+            { name: 'Cache-Control', content: 'no-cache, no-store, must-revalidate, max-age=0' },
+            { name: 'Pragma', content: 'no-cache' },
+            { name: 'Expires', content: '0' }
+        ];
+        
+        metaTags.forEach(tag => {
+            const meta = document.createElement('meta');
+            meta.httpEquiv = tag.name;
+            meta.content = tag.content;
+            document.head.appendChild(meta);
+        });
+        
+        // Override fetch to add cache busting
+        const originalFetch = window.fetch;
+        window.fetch = function(url, options = {}) {
+            if (typeof url === 'string') {
+                const separator = url.includes('?') ? '&' : '?';
+                url += `${separator}nocache=${Date.now()}&v=${AppVersion.version}`;
+            }
+            
+            options.cache = 'no-cache';
+            options.headers = {
+                ...options.headers,
+                'Cache-Control': 'no-cache',
+                'Pragma': 'no-cache'
+            };
+            
+            return originalFetch(url, options);
+        };
+        
+        console.log('🚫 Cache disabilitata per tutte le risorse');
     }
 };
+
+// Initialize cache disabling
+AppVersion.disableCache();
 
 export default AppVersion;

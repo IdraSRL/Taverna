@@ -7,7 +7,7 @@ import MusicSystem from './music-system.js';
 import MapSystem from './map-system.js';
 import TokenSystem from './token-system.js';
 import SheetSystem from './sheet-system.js';
-import AdminPanel from './admin-panel.js';
+import MasterPanel from './master-panel.js';
 import PingSystem from './ping-system.js';
 
 export class UIManager {
@@ -21,7 +21,7 @@ export class UIManager {
         this.tokenSystem = new TokenSystem(this.authManager, this.mapSystem);
         this.sheetSystem = new SheetSystem(this.authManager);
         this.pingSystem = new PingSystem(this.authManager, this.mapSystem);
-        this.adminPanel = new AdminPanel(this.authManager, this.mapSystem, this.tokenSystem, this.musicSystem, this.chatSystem);
+        this.masterPanel = new MasterPanel(this.authManager, this.mapSystem, this.tokenSystem, this.musicSystem, this.chatSystem);
         this.currentView = 'login';
         this.systemsInitialized = false;
         this.initializationInProgress = false;
@@ -36,7 +36,7 @@ export class UIManager {
         // Make systems globally available for onclick handlers
         window.diceSystem = this.diceSystem;
         window.musicSystem = this.musicSystem;
-        window.adminPanel = this.adminPanel;
+        window.masterPanel = this.masterPanel;
         
         // Check for existing session
         if (this.authManager.loadSession()) {
@@ -66,9 +66,15 @@ export class UIManager {
     
     // Handle keyboard shortcuts
     handleKeyboardShortcuts(event) {
-        // Escape key to exit
+        // Escape key to close master panel or exit
         if (event.key === 'Escape' && this.currentView === 'game') {
-            // Check if any modal is open first
+            // Check if master panel is open first
+            if (this.masterPanel.isOpen) {
+                this.masterPanel.closePanel();
+                return;
+            }
+            
+            // Check if any modal is open
             const modals = document.querySelectorAll('.modal-overlay');
             const openModal = Array.from(modals).find(modal => modal.style.display === 'block');
             
@@ -112,11 +118,19 @@ export class UIManager {
             if (sheetBtn) sheetBtn.click();
         }
         
-        // F2 for admin panel (Master only)
+        // F2 for master panel (Master only)
         if (event.key === 'F2' && this.currentView === 'game' && this.authManager.isMaster()) {
             event.preventDefault();
-            const adminBtn = document.getElementById('adminPanelBtn');
-            if (adminBtn) adminBtn.click();
+            this.masterPanel.togglePanel();
+        }
+        
+        // M key for master panel toggle (Master only)
+        if (event.key === 'm' && this.currentView === 'game' && this.authManager.isMaster()) {
+            const activeElement = document.activeElement;
+            if (activeElement.tagName !== 'INPUT' && activeElement.tagName !== 'TEXTAREA') {
+                event.preventDefault();
+                this.masterPanel.togglePanel();
+            }
         }
     }
     
@@ -173,7 +187,7 @@ export class UIManager {
                     this.tokenSystem.init();
                     this.sheetSystem.init();
                     this.pingSystem.init();
-                    this.adminPanel.init();
+                    this.masterPanel.init();
                     
                     // Update responsive layout
                     this.updateResponsiveLayout();
@@ -213,6 +227,7 @@ export class UIManager {
             this.tokenSystem.cleanup();
             this.sheetSystem.cleanup();
             this.pingSystem.cleanup();
+            this.masterPanel.cleanup();
             this.systemsInitialized = false;
             this.initializationInProgress = false;
         }
@@ -239,6 +254,9 @@ export class UIManager {
         adminElements.forEach(element => {
             element.style.display = isMaster ? 'block' : 'none';
         });
+        
+        // Update master panel visibility
+        this.masterPanel.updateVisibility();
     }
     
     // Handle exit
@@ -467,106 +485,6 @@ export class UIManager {
         }
     }
     
-    // Show modal dialog
-    showModal(title, content, buttons = []) {
-        console.log('📋 Mostra modal:', title);
-        
-        const modal = document.createElement('div');
-        modal.className = 'modal-overlay';
-        modal.innerHTML = `
-            <div class="modal-dialog">
-                <div class="modal-header">
-                    <h3>${title}</h3>
-                    <button class="modal-close">&times;</button>
-                </div>
-                <div class="modal-content">
-                    ${content}
-                </div>
-                <div class="modal-buttons">
-                    ${buttons.map(btn => `<button class="modal-btn ${btn.class || ''}" data-action="${btn.action || ''}">${btn.text}</button>`).join('')}
-                </div>
-            </div>
-        `;
-        
-        // Style modal
-        modal.style.cssText = `
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: rgba(26, 15, 8, 0.9);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            z-index: 10000;
-            backdrop-filter: blur(5px);
-        `;
-        
-        const dialog = modal.querySelector('.modal-dialog');
-        dialog.style.cssText = `
-            background: linear-gradient(135deg, #3d2716 0%, #2c1810 100%);
-            border: 3px solid #8b4513;
-            border-radius: 15px;
-            max-width: 500px;
-            width: 90%;
-            max-height: 80vh;
-            overflow-y: auto;
-            color: #d4af37;
-            font-family: 'Cinzel', serif;
-        `;
-        
-        document.body.appendChild(modal);
-        
-        // Handle modal events
-        modal.addEventListener('click', (e) => {
-            if (e.target === modal || e.target.classList.contains('modal-close')) {
-                modal.remove();
-            }
-            
-            if (e.target.classList.contains('modal-btn')) {
-                const action = e.target.dataset.action;
-                if (action) {
-                    this.handleModalAction(action, modal);
-                }
-            }
-        });
-        
-        return modal;
-    }
-    
-    // Handle modal actions
-    handleModalAction(action, modal) {
-        console.log('🎬 Azione modal:', action);
-        
-        switch (action) {
-            case 'close':
-                modal.remove();
-                break;
-            case 'confirm':
-                // Handle confirmation
-                modal.remove();
-                break;
-            case 'clear-chat':
-                this.chatSystem.clearChat();
-                modal.remove();
-                break;
-            // Add more actions as needed
-        }
-    }
-    
-    // Update interface theme
-    updateTheme(theme) {
-        document.body.className = theme;
-        localStorage.setItem('tavernaTheme', theme);
-        console.log('🎨 Tema aggiornato:', theme);
-    }
-    
-    // Get current theme
-    getCurrentTheme() {
-        return localStorage.getItem('tavernaTheme') || 'default';
-    }
-    
     // Initialize tooltips
     initTooltips() {
         const tooltipElements = document.querySelectorAll('[data-tooltip]');
@@ -632,7 +550,7 @@ export class UIManager {
             tokens: this.tokenSystem,
             sheet: this.sheetSystem,
             ping: this.pingSystem,
-            admin: this.adminPanel
+            master: this.masterPanel
         };
     }
 }

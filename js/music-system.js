@@ -1,4 +1,4 @@
-// Music system management
+// Music system management - Improved synchronization
 import FirebaseHelper from './firebase.js';
 
 export class MusicSystem {
@@ -13,6 +13,8 @@ export class MusicSystem {
         this.audioElement = null;
         this.syncInterval = null;
         this.lastSyncTime = 0;
+        this.syncFrequency = 2000; // Sync every 2 seconds
+        this.isSyncing = false;
     }
     
     // Initialize music system
@@ -24,6 +26,11 @@ export class MusicSystem {
         this.listenToPlaylist();
         this.listenToMusicState();
         this.updateMasterControls();
+        
+        // Start sync interval for master
+        if (this.authManager.isMaster()) {
+            this.startSyncInterval();
+        }
     }
     
     // Setup event listeners
@@ -31,8 +38,6 @@ export class MusicSystem {
         const playPauseBtn = document.getElementById('playPauseBtn');
         const loopBtn = document.getElementById('loopBtn');
         const volumeSlider = document.getElementById('volumeSlider');
-        const uploadBtn = document.getElementById('uploadMusicBtn');
-        const musicFile = document.getElementById('musicFile');
         
         // Playback controls - only for master
         if (this.authManager.isMaster()) {
@@ -40,15 +45,9 @@ export class MusicSystem {
             if (loopBtn) loopBtn.addEventListener('click', () => this.toggleLoop());
         }
         
-        // Volume control - available for all users
+        // Volume control - available for all users (local only)
         if (volumeSlider) {
             volumeSlider.addEventListener('input', (e) => this.setVolume(e.target.value / 100));
-        }
-        
-        // Upload controls (Master only)
-        if (this.authManager.isMaster()) {
-            if (uploadBtn) uploadBtn.addEventListener('click', () => musicFile.click());
-            if (musicFile) musicFile.addEventListener('change', (e) => this.handleFileUpload(e));
         }
         
         console.log('✅ Event listeners musica configurati');
@@ -84,100 +83,46 @@ export class MusicSystem {
             this.isPlaying = false;
             this.updatePlayPauseButton();
         });
+        
+        // Prevent seeking for non-masters
+        if (!this.authManager.isMaster()) {
+            this.audioElement.addEventListener('seeking', (e) => {
+                e.preventDefault();
+                return false;
+            });
+        }
     }
     
     // Update master controls visibility
     updateMasterControls() {
-        const uploadSection = document.getElementById('musicUpload');
         const playPauseBtn = document.getElementById('playPauseBtn');
         const loopBtn = document.getElementById('loopBtn');
         const isMaster = this.authManager.isMaster();
         
-        if (uploadSection) uploadSection.style.display = isMaster ? 'block' : 'none';
-        
-        // Hide play/pause and loop controls for players
-        if (!isMaster) {
-            if (playPauseBtn) playPauseBtn.style.display = 'none';
-            if (loopBtn) loopBtn.style.display = 'none';
-        }
+        // Show/hide master controls
+        if (playPauseBtn) playPauseBtn.style.display = isMaster ? 'block' : 'none';
+        if (loopBtn) loopBtn.style.display = isMaster ? 'block' : 'none';
     }
     
-    // Handle file upload
-    async handleFileUpload(event) {
-        if (!this.authManager.isMaster()) {
-            alert('Solo il master può caricare musica.');
-            return;
-        }
+    // Start sync interval (Master only)
+    startSyncInterval() {
+        if (!this.authManager.isMaster()) return;
         
-        const file = event.target.files[0];
-        if (!file) return;
-        
-        // Validate file
-        if (!file.type.startsWith('audio/')) {
-            alert('Per favore seleziona un file audio valido.');
-            return;
-        }
-        
-        if (file.size > 100 * 1024 * 1024) { // 100MB
-            alert('Il file è troppo grande. Massimo 100MB.');
-            return;
-        }
-        
-        const uploadBtn = document.getElementById('uploadMusicBtn');
-        if (uploadBtn) {
-            uploadBtn.classList.add('loading');
-            uploadBtn.disabled = true;
-        }
-        
-        try {
-            console.log('📤 Caricamento musica:', file.name);
-            
-            // Create FormData for upload
-            const formData = new FormData();
-            formData.append('music', file);
-            formData.append('room', this.authManager.getCurrentRoom());
-            
-            // Upload file to server
-            const response = await fetch('php/upload.php', {
-                method: 'POST',
-                body: formData
-            });
-            
-            const result = await response.json();
-            
-            if (result.success) {
-                // Add to Firebase playlist
-                const trackData = {
-                    id: FirebaseHelper.generateUserId(),
-                    title: file.name.replace(/\.[^/.]+$/, ""), // Remove extension
-                    filename: result.filename,
-                    url: result.url,
-                    duration: 0, // Will be updated when loaded
-                    uploadedBy: this.authManager.getCurrentUser().name,
-                    timestamp: FirebaseHelper.getTimestamp()
-                };
-                
-                const room = this.authManager.getCurrentRoom();
-                await FirebaseHelper.pushData(`rooms/${room}/playlist`, trackData);
-                
-                // Clear file input
-                event.target.value = '';
-                
-                console.log('✅ Musica caricata con successo');
-                
-            } else {
-                console.error('❌ Errore caricamento musica:', result.error);
-                alert('Errore durante il caricamento: ' + result.error);
+        this.syncInterval = setInterval(() => {
+            if (this.isPlaying && this.currentTrack && !this.isSyncing) {
+                this.syncMusicState();
             }
-            
-        } catch (error) {
-            console.error('❌ Errore upload musica:', error);
-            alert('Errore durante il caricamento del file.');
-        } finally {
-            if (uploadBtn) {
-                uploadBtn.classList.remove('loading');
-                uploadBtn.disabled = false;
-            }
+        }, this.syncFrequency);
+        
+        console.log('🎵 Intervallo sincronizzazione musica avviato');
+    }
+    
+    // Stop sync interval
+    stopSyncInterval() {
+        if (this.syncInterval) {
+            clearInterval(this.syncInterval);
+            this.syncInterval = null;
+            console.log('🎵 Intervallo sincronizzazione musica fermato');
         }
     }
     
@@ -207,23 +152,27 @@ export class MusicSystem {
         console.log('👂 Ascolto stato musica per stanza:', room);
         
         this.musicStateListener = FirebaseHelper.listenToData(`rooms/${room}/musicState`, (snapshot) => {
-            this.handleMusicStateUpdate(snapshot);
+            if (!this.authManager.isMaster()) {
+                this.handleMusicStateUpdate(snapshot);
+            }
         });
     }
     
-    // Handle music state update (synchronization)
+    // Handle music state update (synchronization for players)
     handleMusicStateUpdate(snapshot) {
-        if (this.authManager.isMaster()) return; // Master doesn't sync from others
+        if (this.authManager.isMaster() || this.isSyncing) return;
         
         try {
             const musicState = snapshot.val();
             if (!musicState) return;
             
-            console.log('🎵 Aggiornamento stato musica:', musicState);
+            this.isSyncing = true;
+            
+            console.log('🎵 Sincronizzazione stato musica:', musicState);
             
             // Sync current track
-            if (musicState.currentTrackKey && musicState.currentTrackKey !== this.currentTrack?.key) {
-                this.selectTrackFromState(musicState.currentTrackKey);
+            if (musicState.currentTrackId && musicState.currentTrackId !== this.currentTrack?.id) {
+                this.selectTrackById(musicState.currentTrackId, false); // Don't sync back
             }
             
             // Sync play/pause state
@@ -253,60 +202,32 @@ export class MusicSystem {
             // Sync time if playing and not too far off
             if (musicState.isPlaying && this.isPlaying && this.audioElement && musicState.currentTime) {
                 const timeDiff = Math.abs(this.audioElement.currentTime - musicState.currentTime);
-                if (timeDiff > 2) { // More than 2 seconds difference
+                if (timeDiff > 3) { // More than 3 seconds difference
                     this.audioElement.currentTime = musicState.currentTime;
                     console.log('🎵 Sincronizzazione tempo audio:', musicState.currentTime);
                 }
             }
             
+            setTimeout(() => {
+                this.isSyncing = false;
+            }, 500);
+            
         } catch (error) {
             console.error('❌ Errore aggiornamento stato musica:', error);
-        }
-    }
-    
-    // Select track from state (for synchronization)
-    async selectTrackFromState(trackKey) {
-        const room = this.authManager.getCurrentRoom();
-        if (!room) return;
-        
-        try {
-            // Get track data
-            const trackRef = FirebaseHelper.getRef(`rooms/${room}/playlist/${trackKey}`);
-            const snapshot = await trackRef.once('value');
-            const trackData = snapshot.val();
-            
-            if (!trackData) return;
-            
-            // Update current track
-            this.currentTrack = { key: trackKey, ...trackData };
-            
-            // Load audio
-            if (this.audioElement) {
-                this.audioElement.src = trackData.url;
-                this.audioElement.load();
-            }
-            
-            // Update UI
-            this.updatePlaylistDisplay();
-            this.updateTrackDisplay();
-            
-            console.log('🎵 Traccia sincronizzata:', trackData.title);
-            
-        } catch (error) {
-            console.error('❌ Errore selezione traccia da stato:', error);
+            this.isSyncing = false;
         }
     }
     
     // Sync music state to Firebase (Master only)
     async syncMusicState() {
-        if (!this.authManager.isMaster()) return;
+        if (!this.authManager.isMaster() || this.isSyncing) return;
         
         const room = this.authManager.getCurrentRoom();
         if (!room) return;
         
         try {
             const musicState = {
-                currentTrackKey: this.currentTrack?.key || null,
+                currentTrackId: this.currentTrack?.id || null,
                 isPlaying: this.isPlaying,
                 isLooping: this.isLooping,
                 currentTime: this.audioElement?.currentTime || 0,
@@ -314,7 +235,6 @@ export class MusicSystem {
             };
             
             await FirebaseHelper.setData(`rooms/${room}/musicState`, musicState);
-            console.log('🎵 Stato musica sincronizzato:', musicState);
             
         } catch (error) {
             console.error('❌ Errore sincronizzazione stato musica:', error);
@@ -366,8 +286,9 @@ export class MusicSystem {
         const trackDiv = document.createElement('div');
         trackDiv.className = 'playlist-item';
         trackDiv.setAttribute('data-track-key', track.key);
+        trackDiv.setAttribute('data-track-id', track.id);
         
-        if (this.currentTrack && this.currentTrack.key === track.key) {
+        if (this.currentTrack && this.currentTrack.id === track.id) {
             trackDiv.classList.add('active');
         }
         
@@ -375,35 +296,47 @@ export class MusicSystem {
         
         trackDiv.innerHTML = `
             <div class="track-info">
-                <div class="track-title">${track.title}</div>
+                <div class="track-title">${track.title || track.name}</div>
                 <div class="track-duration">${this.formatDuration(track.duration)}</div>
             </div>
             <div class="track-actions">
-                ${isMaster ? `<button class="track-btn" onclick="window.musicSystem.selectTrack('${track.key}')">▶️</button>` : ''}
-                ${isMaster ? `<button class="track-btn" onclick="window.musicSystem.deleteTrack('${track.key}')">🗑️</button>` : ''}
+                ${isMaster ? `<button class="track-btn" onclick="window.musicSystem.selectTrackById('${track.id}')">▶️</button>` : ''}
+                ${isMaster ? `<button class="track-btn" onclick="window.musicSystem.deleteTrack('${track.id}')">🗑️</button>` : ''}
             </div>
         `;
         
         return trackDiv;
     }
     
-    // Select track (Master only)
-    async selectTrack(trackKey) {
-        if (!this.authManager.isMaster()) {
-            alert('Solo il master può selezionare le tracce.');
-            return;
+    // Select track by ID (Master only or internal sync)
+    async selectTrackById(trackId, shouldSync = true) {
+        if (!this.authManager.isMaster() && shouldSync) {
+            return; // Only master can manually select tracks
         }
         
         const room = this.authManager.getCurrentRoom();
         if (!room) return;
         
         try {
-            console.log('🎵 Selezione traccia:', trackKey);
+            console.log('🎵 Selezione traccia per ID:', trackId);
             
-            // Get track data
-            const trackRef = FirebaseHelper.getRef(`rooms/${room}/playlist/${trackKey}`);
-            const snapshot = await trackRef.once('value');
-            const trackData = snapshot.val();
+            // Find track in playlist
+            const playlistRef = FirebaseHelper.getRef(`rooms/${room}/playlist`);
+            const snapshot = await playlistRef.once('value');
+            const playlistData = snapshot.val();
+            
+            if (!playlistData) return;
+            
+            let trackData = null;
+            let trackKey = null;
+            
+            for (const [key, track] of Object.entries(playlistData)) {
+                if (track.id === trackId) {
+                    trackData = track;
+                    trackKey = key;
+                    break;
+                }
+            }
             
             if (!trackData) return;
             
@@ -420,16 +353,18 @@ export class MusicSystem {
             this.updatePlaylistDisplay();
             this.updateTrackDisplay();
             
-            // Enable play button
+            // Enable play button for master
             const playPauseBtn = document.getElementById('playPauseBtn');
             if (this.authManager.isMaster() && playPauseBtn) {
                 playPauseBtn.disabled = false;
             }
             
-            // Sync state
-            await this.syncMusicState();
+            // Sync state if master
+            if (this.authManager.isMaster() && shouldSync) {
+                await this.syncMusicState();
+            }
             
-            console.log('✅ Traccia selezionata:', trackData.title);
+            console.log('✅ Traccia selezionata:', trackData.title || trackData.name);
             
         } catch (error) {
             console.error('❌ Errore selezione traccia:', error);
@@ -437,7 +372,7 @@ export class MusicSystem {
     }
     
     // Delete track (Master only)
-    async deleteTrack(trackKey) {
+    async deleteTrack(trackId) {
         if (!this.authManager.isMaster()) {
             console.warn('⚠️ Solo i master possono eliminare tracce');
             return;
@@ -450,15 +385,30 @@ export class MusicSystem {
         const room = this.authManager.getCurrentRoom();
         
         try {
-            console.log('🗑️ Eliminazione traccia:', trackKey);
+            console.log('🗑️ Eliminazione traccia:', trackId);
             
-            // Get track data for file deletion
-            const trackRef = FirebaseHelper.getRef(`rooms/${room}/playlist/${trackKey}`);
-            const snapshot = await trackRef.once('value');
-            const trackData = snapshot.val();
+            // Find and get track data
+            const playlistRef = FirebaseHelper.getRef(`rooms/${room}/playlist`);
+            const snapshot = await playlistRef.once('value');
+            const playlistData = snapshot.val();
             
-            if (trackData && trackData.filename) {
-                // Delete file from server
+            if (!playlistData) return;
+            
+            let trackData = null;
+            let trackKey = null;
+            
+            for (const [key, track] of Object.entries(playlistData)) {
+                if (track.id === trackId) {
+                    trackData = track;
+                    trackKey = key;
+                    break;
+                }
+            }
+            
+            if (!trackData) return;
+            
+            // Delete file from server
+            if (trackData.filename) {
                 const response = await fetch('php/delete.php', {
                     method: 'POST',
                     headers: {
@@ -466,7 +416,8 @@ export class MusicSystem {
                     },
                     body: JSON.stringify({
                         filename: trackData.filename,
-                        room: room
+                        room: room,
+                        type: 'music'
                     })
                 });
                 
@@ -480,7 +431,7 @@ export class MusicSystem {
             await FirebaseHelper.removeData(`rooms/${room}/playlist/${trackKey}`);
             
             // If this was the current track, stop playback
-            if (this.currentTrack && this.currentTrack.key === trackKey) {
+            if (this.currentTrack && this.currentTrack.id === trackId) {
                 if (this.audioElement) {
                     this.audioElement.pause();
                     this.audioElement.src = '';
@@ -545,7 +496,7 @@ export class MusicSystem {
         console.log('🎵 Loop:', this.isLooping);
     }
     
-    // Set volume (Available for all users)
+    // Set volume (Available for all users - local only)
     setVolume(volume) {
         this.volume = Math.max(0, Math.min(1, volume));
         if (this.audioElement) {
@@ -557,7 +508,7 @@ export class MusicSystem {
             volumeSlider.value = this.volume * 100;
         }
         
-        console.log('🔊 Volume impostato:', this.volume);
+        console.log('🔊 Volume locale impostato:', this.volume);
     }
     
     // Update play/pause button
@@ -586,7 +537,7 @@ export class MusicSystem {
         const trackTime = currentTrackElement.querySelector('.track-time');
         
         if (this.currentTrack && trackName && trackTime) {
-            trackName.textContent = this.currentTrack.title;
+            trackName.textContent = this.currentTrack.title || this.currentTrack.name;
             
             const currentTime = this.audioElement?.currentTime || 0;
             const duration = this.audioElement?.duration || 0;
@@ -602,8 +553,8 @@ export class MusicSystem {
     updatePlaylistDisplay() {
         const playlistItems = document.querySelectorAll('.playlist-item');
         playlistItems.forEach(item => {
-            const trackKey = item.getAttribute('data-track-key');
-            if (this.currentTrack && trackKey === this.currentTrack.key) {
+            const trackId = item.getAttribute('data-track-id');
+            if (this.currentTrack && trackId === this.currentTrack.id) {
                 item.classList.add('active');
             } else {
                 item.classList.remove('active');
@@ -640,10 +591,7 @@ export class MusicSystem {
             this.musicStateListener = null;
         }
         
-        if (this.syncInterval) {
-            clearInterval(this.syncInterval);
-            this.syncInterval = null;
-        }
+        this.stopSyncInterval();
         
         if (this.audioElement) {
             this.audioElement.pause();
